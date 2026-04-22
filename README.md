@@ -83,3 +83,25 @@ Grab your personal Meshtastic radio (Node B) and send a text to your designated 
 !surv How do I purify water? (Rugged survival advice)
 
 !grump What is the news today? (Sarcastic, cynical response)
+
+
+graph TD
+    %% Script 1 Workflow
+    subgraph Script 1: Database Ingestion
+        A[Dropzone PDFs & TXTs] -->|Read & Parse| C[(ChromaDB Vector Store)]
+        B[RSS Feeds / Web] -->|Stealth Scrape| C
+    end
+
+    %% Script 2 Workflow
+    subgraph Script 2: The Radio Brain
+        E[Local MQTT Broker] -->|Receives Private Chat| D{Python Router}
+        D <-->|1. Queries for Context| C
+        D <-->|2. Sends Chat + DB Info| F[Ollama Local LLM]
+        D -->|3. Sends Chunked Reply| E
+    end
+
+    %% Hardware/Mesh Workflow
+    subgraph LoRa Mesh Network
+        G(Base Station / Node A) <-->|WiFi Connect| E
+        G <-->|LoRa Encrypted RF| H(Remote User / Node B)
+    end
