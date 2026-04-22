@@ -92,6 +92,14 @@ graph TD
         B[RSS Feeds / Web] -->|Stealth Scrape| C
     end
 
+```mermaid
+graph TD
+    %% Script 1 Workflow
+    subgraph Script 1: Database Ingestion
+        A[Dropzone PDFs & TXTs] -->|Read & Parse| C[(ChromaDB Vector Store)]
+        B[RSS Feeds / Web] -->|Stealth Scrape| C
+    end
+
     %% Script 2 Workflow
     subgraph Script 2: The Radio Brain
         E[Local MQTT Broker] -->|Receives Private Chat| D{Python Router}
