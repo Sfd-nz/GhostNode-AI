@@ -85,12 +85,7 @@ Grab your personal Meshtastic radio (Node B) and send a text to your designated 
 !grump What is the news today? (Sarcastic, cynical response)
 
 
-graph TD
-    %% Script 1 Workflow
-    subgraph Script 1: Database Ingestion
-        A[Dropzone PDFs & TXTs] -->|Read & Parse| C[(ChromaDB Vector Store)]
-        B[RSS Feeds / Web] -->|Stealth Scrape| C
-    end
+
 
 ```mermaid
 graph TD
