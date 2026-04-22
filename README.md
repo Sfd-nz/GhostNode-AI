@@ -43,15 +43,20 @@ Download the Database Embedding Model:
 
 Bash
 ollama pull nomic-embed-text
+
+
 📦 Phase 3: Python Dependencies
 This project requires specific Python libraries to handle MQTT routing, database vectoring, and web scraping. Install all required packages by running this command in your terminal:
 
 Bash
 pip install paho-mqtt requests chromadb feedparser beautifulsoup4 PyPDF2 python-dotenv
+
+
 🔐 Phase 4: Configuration & Security (.env)
 DO NOT hardcode your passwords or IP addresses into the Python scripts. 1. Create a new text file in the exact same folder as your Python scripts.
 2. Name the file exactly .env (ensure it is not named .env.txt).
 3. Paste the template below into the file, and fill in your specific network details and file paths.
+
 
 🚀 Phase 5: Launching the System
 You must run the scripts in separate terminal windows.
