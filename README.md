@@ -53,39 +53,6 @@ DO NOT hardcode your passwords or IP addresses into the Python scripts. 1. Creat
 2. Name the file exactly .env (ensure it is not named .env.txt).
 3. Paste the template below into the file, and fill in your specific network details and file paths.
 
-The .env Template
-Code snippet
-# ==========================================
-# LORA AI MESH - MASTER CONFIGURATION
-# ==========================================
-
-# --- MQTT BROKER SETTINGS ---
-# The IP address of your local MQTT broker (e.g., ESP32 or Raspberry Pi)
-BROKER_IP="192.168.1.XX"
-BROKER_PORT=1883
-MQTT_USER="Your_MQTT_Username"
-MQTT_PASS="Your_MQTT_Password"
-LISTEN_TOPIC="msh/ANZ/2/#"
-
-# --- HARDWARE SETTINGS ---
-# The specific Node ID of your Base Station (Node A) in decimal format (e.g., 4134200044)
-HELTEC_NODE_ID_DEC=0000000000
-# Which channel numbers the AI is allowed to respond on (comma separated, e.g., 1,2,3)
-ALLOWED_AI_CHANNELS=2
-
-# --- AI & OLLAMA SETTINGS ---
-OLLAMA_URL="http://localhost:11434/api/chat"
-OLLAMA_EMBED_URL="http://localhost:11434/api/embeddings"
-OLLAMA_MODEL="dolphin-mixtral:8x7b-v2.5-q4_K_M"
-EMBED_MODEL="nomic-embed-text"
-
-# --- DATABASE PATHS ---
-# Windows Example: "F:/Offline_AI_Brain/chroma_db"
-# Linux/Pi Example: "/home/pi/Offline_AI_Brain/chroma_db"
-DB_PATH="C:/Path/To/Your/chroma_db"
-DROPZONE_PATH="C:/Path/To/Your/Dropzone"
-(Note: If you are sharing this repository on GitHub, keep the .env file on your local machine and only upload an empty .env.example file to protect your credentials).
-
 🚀 Phase 5: Launching the System
 You must run the scripts in separate terminal windows.
 
