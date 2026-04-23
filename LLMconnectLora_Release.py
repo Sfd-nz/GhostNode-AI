@@ -8,6 +8,7 @@ import chromadb
 import threading 
 import random
 import os
+import re
 from dotenv import load_dotenv
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -15,7 +16,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 # ==========================================
 # 1. LOAD ENVIRONMENT VARIABLES
 # ==========================================
-load_dotenv() # Reads the .env file
+load_dotenv() 
 
 BROKER_IP = os.getenv("BROKER_IP", "127.0.0.1")
 BROKER_PORT = int(os.getenv("BROKER_PORT", 1883))
@@ -26,7 +27,6 @@ LISTEN_TOPIC = os.getenv("LISTEN_TOPIC", "msh/2/#")
 HELTEC_NODE_ID_DEC = int(os.getenv("HELTEC_NODE_ID_DEC", "0"))
 HELTEC_HEX_ID = "!" + hex(HELTEC_NODE_ID_DEC)[2:]
 
-# Parse allowed channels from comma-separated string
 ALLOWED_AI_CHANNELS = [int(x.strip()) for x in os.getenv("ALLOWED_AI_CHANNELS", "2").split(",")]
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/chat")
@@ -46,7 +46,6 @@ except Exception as e:
     print(f"[!] Warning: Could not connect to ChromaDB on startup: {e}")
 
 def safe_query(query_embeddings, n_results, where=None):
-    """Prevents SQLite 'database is locked' crashes by retrying if the ingestion script is currently writing."""
     retries = 5
     for attempt in range(retries):
         try:
@@ -74,8 +73,19 @@ PERSONAS = {
 }
 
 # ==========================================
-# 4. AI LOGIC & DATABASE SEARCH
+# 4. GEO-EXPANSION HYBRID RAG SEARCH (V27)
 # ==========================================
+GEO_SYNONYMS = {
+    "nz": ["nz", "new zealand", "zealand", "kiwi", "auckland", "wellington", "ardern", "luxon"],
+    "us": ["us", "usa", "united states", "america", "american", "washington", "pentagon", "biden"],
+    "uk": ["uk", "united kingdom", "britain", "british", "london", "england", "sunak"],
+    "iran": ["iran", "tehran", "iranian", "islamic republic"],
+    "israel": ["israel", "idf", "jerusalem", "tel aviv", "zionist", "gaza"],
+    "russia": ["russia", "russian", "moscow", "putin", "kremlin"],
+    "china": ["china", "chinese", "beijing", "prc", "ccp"],
+    "ukraine": ["ukraine", "kyiv", "ukrainian", "zelensky"]
+}
+
 def ask_ollama(trigger, user_question, sender_id):
     current_time = datetime.datetime.now().strftime("%I:%M %p")
     today_date = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -97,37 +107,66 @@ def ask_ollama(trigger, user_question, sender_id):
                 if is_time_sensitive:
                     search_filter = {"$and": [{"category": "news"}, {"ingested_at": today_date}]}
                 
+                raw_results = None
                 if search_filter:
-                    results = safe_query(query_embeddings=[question_vector], n_results=5, where=search_filter)
-                    
-                    if not results['documents'] or not results['documents'][0]:
+                    raw_results = safe_query(query_embeddings=[question_vector], n_results=10, where=search_filter)
+                    if not raw_results['documents'] or not raw_results['documents'][0]:
                         print("[!] No news found for today specifically. Falling back to general news...")
                         backup_filter = {"category": "news"}
-                        results = safe_query(query_embeddings=[question_vector], n_results=5, where=backup_filter)
-                        
-                    if results['documents'] and results['documents'][0]:
-                        docs = results['documents'][0]
-                        metas = results['metadatas'][0] if results['metadatas'] else [{}] * len(docs)
-                        
-                        combined = list(zip(docs, metas))
-                        try:
-                            combined.sort(key=lambda x: x[1].get("unix_time", 0), reverse=True)
-                        except Exception as sort_err:
-                            print(f"[!] Sorting notice: {sort_err}. Using default order.")
-                        
-                        top_docs = [item[0] for item in combined[:4]]
-                        retrieved_knowledge = " ".join(top_docs)
-                        print(f"[💾] Database match found! (Sorted by newest. Filter applied: {search_filter})")
+                        raw_results = safe_query(query_embeddings=[question_vector], n_results=10, where=backup_filter)
                 else:
-                    results = safe_query(query_embeddings=[question_vector], n_results=4)
-                    if results['documents'] and results['documents'][0]:
-                        retrieved_knowledge = " ".join(results['documents'][0])
-                        print(f"[💾] Database match found! (Filter applied: None)")
+                    raw_results = safe_query(query_embeddings=[question_vector], n_results=10)
+                    
+                # SMART INTENT DETECTOR & RERANKING
+                if raw_results and raw_results['documents'] and raw_results['documents'][0]:
+                    docs = raw_results['documents'][0]
+                    
+                    stop_words = {"whats", "what", "is", "the", "latest", "news", "in", "on", "about", "today", "now", "current", "update", "a", "an", "of", "and", "to", "for", "with", "are", "do", "does", "did", "how", "why", "when", "where", "can", "could", "would", "should", "tell", "me", "give", "any", "some", "best", "route", "around", "get"}
+                    base_keywords = [w for w in re.findall(r'\b\w+\b', user_question.lower()) if w not in stop_words]
+                    
+                    # Check if the user asked about a specific country
+                    has_geo_intent = any(kw in GEO_SYNONYMS for kw in base_keywords)
+                    
+                    if has_geo_intent:
+                        expanded_keywords = set(base_keywords)
+                        for kw in base_keywords:
+                            if kw in GEO_SYNONYMS:
+                                expanded_keywords.update(GEO_SYNONYMS[kw])
+                                
+                        print(f"[🔍] Geo-Intent Detected. Expanded Keywords: {list(expanded_keywords)}")
+                        
+                        scored_docs = []
+                        for doc in docs:
+                            score = 0
+                            doc_lower = doc.lower()
+                            for kw in expanded_keywords:
+                                if kw in doc_lower:
+                                    score += 1
+                            scored_docs.append((score, doc))
+                            
+                        scored_docs.sort(key=lambda x: x[0], reverse=True)
+                        
+                        if scored_docs[0][0] > 0:
+                            top_docs = [item[1] for item in scored_docs[:3]]
+                            retrieved_knowledge = " ".join(top_docs)
+                            print(f"[💾] Database match found & geo-ranked!")
+                        else:
+                            # Safety fallback just in case the dictionary misses
+                            top_docs = docs[:3]
+                            retrieved_knowledge = " ".join(top_docs)
+                            print(f"[!] Geo-rank fallback. Using standard semantic match.")
+                            
+                    else:
+                        # PURE SEMANTIC BYPASS (For general survival/manual questions)
+                        print(f"[🔍] No Geo-Intent detected. Using Pure Semantic Search.")
+                        top_docs = docs[:3]
+                        retrieved_knowledge = " ".join(top_docs)
+                        print(f"[💾] Standard database match found!")
                         
         except Exception as e:
             print(f"[!] RAG Error: {e}")
             if "Error finding id" in str(e):
-                print("[!] CRITICAL: Stale index detected. You must restart this Python script to sync with the pruned database.")
+                print("[!] CRITICAL: Stale index detected. Restart this script.")
 
     db_stat = f"[Database: {retrieved_knowledge}] "
     context_question = f"Time: {current_time}. {db_stat}User asks: {user_question}"
@@ -216,7 +255,6 @@ def process_ai_command(text, sender_id, incoming_channel, client, msg_topic):
 
                 total_chunks = len(chunks)
                 
-                # Base MQTT Topic to send replies out based on the listening topic root
                 topic_root = LISTEN_TOPIC.split('/#')[0]
                 heltec_downlink_topic = f"{topic_root}/json/mqtt/{HELTEC_HEX_ID}"
                 
