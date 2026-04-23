@@ -3,6 +3,8 @@
 
 <img width="2752" height="1536" alt="{__image_generation_instructions___{_202604222223" src="https://github.com/user-attachments/assets/c6c35e21-cc6c-4840-8ab0-ae692a951e6a" />
 
+⚠️ IMPORTANT: Running this on lower-end hardware? > The default model requires 24GB of RAM. If you are using a standard laptop or a Raspberry Pi, Please read the AI Model & Hardware Selection Guide to swap to a lighter model before continuing.
+
 📻 Off-Grid Tactical AI Mesh (LoRa / MQTT)
 This project creates a fully offline, autonomous AI "Librarian" and Tactical Assistant for a Meshtastic LoRa network. It operates independently of the internet, scraping global intelligence and reading offline manuals into a local vector database, and then broadcasts answers over an encrypted radio mesh.
 
