@@ -86,6 +86,19 @@ Grab your personal Meshtastic radio (Node B) and send a text to your designated 
 
 !grump What is the news today? (Sarcastic, cynical response)
 
+### ✨ Dashboard Features
+* **Split-Screen Comms:** Separates your AI Database queries (Left Panel) from Live Squad Chatter (Right Panel).
+* **Silent Mode:** Ask the AI questions and read the answers on your screen *without* broadcasting them over the radio and congesting the LoRa network.
+* **Dynamic Channel Routing:** Send manual messages or broadcast AI intel to specific channels (0-5) using a dropdown menu.
+* **API Interceptors:** Type `!weather [City]` in the squad comms panel, and the dashboard will silently fetch the data from the web and broadcast the clean weather report out to your radios.
+
+### ⚙️ How to Setup and Run
+The dashboard runs as a standalone Flask server but **shares the exact same `.env` file** as your main AI script.
+
+1. **Install Requirements:** The dashboard requires `flask` and `requests`. 
+   ```bash
+   pip install flask requests
+
 
 
 
