@@ -4,7 +4,8 @@ import threading
 import warnings
 import logging
 import socket
-import requests 
+import requests
+import time  # <-- Added this so the 12-second delay works!
 from flask import Flask, request, jsonify, render_template_string
 import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
@@ -55,17 +56,37 @@ def on_message(client, userdata, msg):
             sender = str(payload.get("from", "Unknown"))
             text = payload["payload"]["text"]
             
-            # Grab the incoming channel (defaults to 0 if missing)
             incoming_channel = int(payload.get("channel", 0))
             
+            # Ignore echoes from our own node
             if sender == "Web-Dashboard" or sender == str(HELTEC_NODE_ID_DEC):
                 return
 
-            if sender == "AI-Bot" or text.startswith("!"):
+            # --- AUTO-RESPONDER FOR FRIENDS ---
+            if text.lower().startswith("!weather"):
+                chat_history["radio"].append({"sender": f"{sender} [Ch {incoming_channel}]", "text": text})
+                if len(chat_history["radio"]) > 50: chat_history["radio"].pop(0)
+                
+                location = text[8:].strip()
+                api_reply = get_weather(location)
+                
+                chat_history["radio"].append({"sender": f"HQ-Auto [Ch {incoming_channel}]", "text": api_reply})
+                
+                reply_payload = {
+                    "channel": incoming_channel, 
+                    "from": HELTEC_NODE_ID_DEC, 
+                    "type": "sendtext",
+                    "payload": api_reply
+                }
+                mqtt_client.publish(RADIO_PUBLISH_TOPIC, json.dumps(reply_payload, ensure_ascii=False))
+                print(f"[🌤️] AUTO-REPLY: Sent weather to {sender} on Channel {incoming_channel}")
+                return 
+
+            # --- NORMAL SORTER FOR EVERYTHING ELSE ---
+            elif sender == "AI-Bot" or text.startswith("!"):
                 chat_history["c2"].append({"sender": sender, "text": text})
                 if len(chat_history["c2"]) > 50: chat_history["c2"].pop(0)
             else:
-                # Add the channel number to the sender's tag so you know where they are!
                 chat_history["radio"].append({"sender": f"{sender} [Ch {incoming_channel}]", "text": text})
                 if len(chat_history["radio"]) > 50: chat_history["radio"].pop(0)
 
@@ -89,14 +110,10 @@ threading.Thread(target=mqtt_client.loop_forever, daemon=True).start()
 # ==========================================
 def get_weather(location="Auckland"):
     try:
-        # format=4 returns a single, clean line of text perfect for radio
         url = f"https://wttr.in/{location}?format=4"
         response = requests.get(url, timeout=5)
         response.raise_for_status()
-        
-        # Force Python to read the emojis correctly!
         response.encoding = 'utf-8' 
-        
         return f"[WEATHER] {response.text.strip()}"
     except Exception as e:
         print(f"[!] Weather API Error: {e}")
@@ -197,7 +214,7 @@ def index():
                 const boxRadio = document.getElementById('chat-box-radio');
                 let htmlRadio = '';
                 data.radio.forEach(msg => {
-                    let cssClass = msg.sender.startsWith('HQ-Op') ? 'sender-you' : 'radio-sender';
+                    let cssClass = msg.sender.startsWith('HQ-') ? 'sender-you' : 'radio-sender';
                     htmlRadio += `<div class="message"><span class="${cssClass}">[${msg.sender}]</span> ${msg.text}</div>`;
                 });
                 if (boxRadio.innerHTML !== htmlRadio) { boxRadio.innerHTML = htmlRadio; boxRadio.scrollTop = boxRadio.scrollHeight; }
@@ -251,7 +268,6 @@ def send_c2():
         chat_history["c2"].append({"sender": "Web-Dashboard", "text": f"[{mode}] {text}"})
         
         payload = {"from": "Web-Dashboard", "channel": 2, "web_only": web_only, "payload": {"text": text}}
-        # Modified to ensure emojis pass through cleanly
         mqtt_client.publish(C2_PUBLISH_TOPIC, json.dumps(payload, ensure_ascii=False))
         print(f"[💻] C2 ACTION: Sent {mode} AI command.")
         
@@ -260,41 +276,67 @@ def send_c2():
 @app.route("/send/radio", methods=["POST"])
 def send_radio():
     data = request.json
-    text = data.get("text", "")
+    raw_text = data.get("text", "")
     channel = int(data.get("channel", 0))
     
-    if text:
-        # --- COMMAND INTERCEPTOR ---
-        if text.lower().startswith("!weather"):
-            location = text[8:].strip() 
-            api_reply = get_weather(location)
-            
-            chat_history["radio"].append({"sender": f"HQ-Op [Ch {channel}]", "text": api_reply})
-            
-            payload = {
-                "channel": channel, 
-                "from": HELTEC_NODE_ID_DEC, 
-                "type": "sendtext",
-                "payload": api_reply
-            }
-            # Modified to ensure emojis pass through cleanly
-            mqtt_client.publish(RADIO_PUBLISH_TOPIC, json.dumps(payload, ensure_ascii=False))
-            print(f"[🌤️] API ACTION: Transmitted Weather on Channel {channel}: '{api_reply}'")
-            return jsonify({"status": "sent"})
-            
-        # --- NORMAL HUMAN CHAT ROUTINE ---
+    if raw_text:
+        # Determine if it's a Weather API call or Normal Text
+        if raw_text.lower().startswith("!weather"):
+            location = raw_text[8:].strip() 
+            text_to_send = get_weather(location)
+            display_sender = f"HQ-Auto [Ch {channel}]"
         else:
-            chat_history["radio"].append({"sender": f"HQ-Op [Ch {channel}]", "text": text})
+            text_to_send = raw_text
+            display_sender = f"HQ-Op [Ch {channel}]"
+
+        # 1. Instantly display the full message in the Web UI
+        chat_history["radio"].append({"sender": display_sender, "text": text_to_send})
+        
+        # 2. Define the background chunking process
+        def background_transmit(full_text, ch):
+            max_chunk_length = 190 # Safe limit leaving room for the (1/3) tag
+            words = full_text.split()
+            chunks = []
+            current_chunk = ""
             
-            payload = {
-                "channel": channel, 
-                "from": HELTEC_NODE_ID_DEC, 
-                "type": "sendtext",
-                "payload": text
-            }
-            # Modified to ensure emojis pass through cleanly
-            mqtt_client.publish(RADIO_PUBLISH_TOPIC, json.dumps(payload, ensure_ascii=False))
-            print(f"[🎙️] RADIO ACTION: Transmitted on Channel {channel}: '{text}'")
+            for word in words:
+                if len(current_chunk) + len(word) + 1 > max_chunk_length:
+                    if current_chunk:
+                        chunks.append(current_chunk)
+                    current_chunk = word
+                else:
+                    if current_chunk:
+                        current_chunk += " " + word
+                    else:
+                        current_chunk = word
+            if current_chunk:
+                chunks.append(current_chunk)
+
+            total_chunks = len(chunks)
+
+            # Loop through and send each chunk
+            for i, chunk in enumerate(chunks):
+                if total_chunks > 1:
+                    final_text = f"{chunk} ({i+1}/{total_chunks})"
+                else:
+                    final_text = chunk
+                
+                payload = {
+                    "channel": ch, 
+                    "from": HELTEC_NODE_ID_DEC, 
+                    "type": "sendtext",
+                    "payload": final_text
+                }
+                mqtt_client.publish(RADIO_PUBLISH_TOPIC, json.dumps(payload, ensure_ascii=False))
+                print(f"[🎙️] Transmitted Part {i+1}/{total_chunks} on Channel {ch}: '{final_text}'")
+                
+                # Apply the 12-second delay to protect the radio mesh
+                if total_chunks > 1 and i < total_chunks - 1:
+                    print(f"[⌛] Waiting 12 seconds for radio duty cycle...")
+                    time.sleep(12)
+
+        # 3. Spin up the background thread so the web UI stays lightning fast
+        threading.Thread(target=background_transmit, args=(text_to_send, channel)).start()
             
     return jsonify({"status": "sent"})
 
