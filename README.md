@@ -36,19 +36,24 @@ Before running the Python scripts, you must install the local AI engine and down
 2. Open your terminal and download the **AI Chat Model** (Requires ~24GB RAM/VRAM for Mixtral, or use `llama3:8b` for lower-end hardware):
    ```bash
    ollama run dolphin-mixtral:8x7b-v2.5-q4_K_M
+
 Download the Database Embedding Model:
+```bash
+ollama pull nomic-embed-text 
+```
 
-Bash
-ollama pull nomic-embed-text
 Download the Kinetic Dispatcher Model (Optimized for JSON generation):
-
-Bash
+ ```bash
 ollama pull qwen2.5-coder:7b
+```
+
+
 📦 Phase 3: Python Dependencies
 This project requires specific Python libraries to handle MQTT routing, database vectoring, web scraping, and the C2 Dashboard. Install them via your terminal:
-
-Bash
+ ```bash
 pip install paho-mqtt requests chromadb feedparser beautifulsoup4 PyPDF2 python-dotenv flask
+ ```
+
 🔐 Phase 4: Master Configuration (.env)
 GhostNode-AI is heavily customizable. DO NOT hardcode your passwords or IP addresses into the Python scripts.
 
