@@ -34,8 +34,9 @@ Before running the Python scripts, you must install the local AI engine and down
 
 1. Install [Ollama](https://ollama.com/) on your machine.
 2. Open your terminal and download the **AI Chat Model** (Requires ~24GB RAM/VRAM for Mixtral, or use `llama3:8b` for lower-end hardware):
-   ```bash
+```bash
    ollama run dolphin-mixtral:8x7b-v2.5-q4_K_M
+```
 
 Download the Database Embedding Model:
 ```bash
@@ -73,23 +74,28 @@ You must run the scripts in separate terminal windows.
 1. Start the Memory Librarian (Database Builder)
 Run this script in the background. It will automatically wake up to pull fresh intelligence. Drop any .pdf survival manuals into your Dropzone folder and use Option 1 to memorize them.
 
-Bash
-python LLMchromadbScraper.py
+```bash
+python DropzoneChromadb_Release.py
+```
 2. Start the AI Brain (Radio Listener)
 Connects the AI to your radio mesh to answer intelligence queries.
 
-Bash
-python LoraConnectToLLM.py
+```bash
+python LLMconnectLora_Release.py
+```
 3. Start the Operations Center (C2 Web UI)
 Launch your graphical interface and navigate to the local IP provided in the terminal.
 
-Bash
-python dashboard.py
+```bash
+python WebDashboardInterface_Release.py
+```
 4. Start the Kinetic Dispatcher (Hardware Bridge)
 Launch the dual-path IoT router to enable physical hardware control via the mesh or dashboard.
 
-Bash
-python IoT_DispatcherV3.py
+```bash
+python IoT_Dispatcher_Release.py
+```
+
 📡 Phase 6: Using the System
 Radio Commands (Multi-Collection Routing)
 Grab your personal Meshtastic radio (Node B) and send a text to your designated AI channel. The AI uses strict collection-routing to prevent cross-contamination of data:
