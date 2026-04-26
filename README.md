@@ -137,14 +137,30 @@ graph TD
 
     %% Script 2 Workflow
     subgraph Script 2: The Radio Brain
-        E[Local MQTT Broker] -->|Receives Private Chat| D{Python Router}
-        D <-->|1. Queries for Context| C
+        E[Local MQTT Broker] -->|Receives Private Chat| D{Python Radio Router}
+        D <-->|1. Queries Context| C
         D <-->|2. Sends Chat + DB Info| F[Ollama Local LLM]
         D -->|3. Sends Chunked Reply| E
+    end
+
+    %% Script 3 Workflow (NEW: The 4th Pillar)
+    subgraph Script 3: Kinetic Dispatcher
+        E -->|Receives !action Command| I{IoT Dispatcher Router}
+        I <-->|1. Sends Prompt for JSON| F
+        I -->|2. Publishes Strict JSON| E
+        I -->|3. Sends Radio Confirmation| E
     end
 
     %% Hardware/Mesh Workflow
     subgraph LoRa Mesh Network
         G(Base Station / Node A) <-->|WiFi Connect| E
         G <-->|LoRa Encrypted RF| H(Remote User / Node B)
+    end
+
+    %% Edge Nodes Workflow (NEW: Physical Hardware)
+    subgraph Kinetic Edge Nodes
+        E -->|JSON Payload: /basic topic| J[ESP32 Basic Node]
+        E -->|JSON Payload: /claw topic| K[ESP32-S3 Smart Node]
+        J -.->|Physical Action| L((LED / Relay))
+        K -.->|Physical Action| M((Multi-Axis Servo))
     end
