@@ -9,10 +9,10 @@ It operates entirely independent of the internet, scraping global intelligence a
 ## 🧠 The Four Pillars of GhostNode-AI
 This system relies on four interconnected Python engines running simultaneously:
 
-1. **The Memory Librarian (`LLMchromadbScraper.py`):** Quietly builds the offline database. It utilizes stealth browser masquerading, multi-threaded worker queues, and URL deduplication to scrape RSS feeds without triggering bot-blockers. It separates data into specific collections and features a 90-day auto-pruning system.
-2. **The AI Brain (`LoraConnectToLLM.py`):** The core radio listener. When an authorized user sends a command over the mesh (e.g., `!tac What is the latest news in the US?`), it securely queries the database using mathematical distance filtering to prevent hallucinations, and broadcasts a chunked response over LoRa.
-3. **The Operations Center (`dashboard.py`):** A local Flask web UI designed for a field laptop or tablet. It allows the operator to monitor live squad chatter, query the AI silently, intercept commands like `!weather`, and manually transmit C2 text to specific radio channels.
-4. **The Kinetic Dispatcher (`IoT_DispatcherV3.py`):** The hardware bridge. It intercepts natural language action commands (e.g., `turn on the blue led`), translates them into strict machine-readable JSON using a dedicated local coder LLM, and dispatches them to custom ESP32 hardware nodes. It then broadcasts a confirmation of the physical action back over the LoRa mesh.
+1. **The Memory Librarian (`DropzoneChromadb_Release.py`):** Quietly builds the offline database. It utilizes stealth browser masquerading, multi-threaded worker queues, and URL deduplication to scrape RSS feeds without triggering bot-blockers. It separates data into specific collections and features a 90-day auto-pruning system.
+2. **The AI Brain (`LLMconnectLora_Release.py`):** The core radio listener. When an authorized user sends a command over the mesh (e.g., `!tac What is the latest news in the US?`), it securely queries the database using mathematical distance filtering to prevent hallucinations, and broadcasts a chunked response over LoRa.
+3. **The Operations Center (`WebDashboardInterface_Release.py`):** A local Flask web UI designed for a field laptop or tablet. It allows the operator to monitor live squad chatter, query the AI silently, intercept commands like `!weather`, and manually transmit C2 text to specific radio channels.
+4. **The Kinetic Dispatcher (`IoT_Dispatcher_Release.py`):** The hardware bridge. It intercepts natural language action commands (e.g., `turn on the blue led`), translates them into strict machine-readable JSON using a dedicated local coder LLM, and dispatches them to custom ESP32 hardware nodes. It then broadcasts a confirmation of the physical action back over the LoRa mesh.
 
 ---
 
