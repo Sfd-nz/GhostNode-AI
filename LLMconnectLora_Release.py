@@ -74,14 +74,15 @@ def safe_query(collection, query_embeddings, n_results, where=None):
 # 3. MEMORY & PERSONAS
 # ==========================================
 MAX_MEMORY_LENGTH = 10
-conversation_history = {"!ai": {}, "!tac": {}, "!grump": {}, "!surv": {}}
+conversation_history = {"!ai": {}, "!tac": {}, "!grump": {}, "!surv": {}, "!trip": {}}
 
 PERSONAS = {
     "!ai": "You are an off-grid AI on a low-bandwidth radio. Answer directly. DO NOT repeat the prompt. Base answers STRICTLY on the Database results. If Database says 'No relevant database info found.', you MUST reply 'Error: No data available.' Do NOT invent answers.",
     # --- THE FIX: FORCING THE SITREP ---
     "!tac": "You are a tactical radio operator. Use military brevity. You MUST summarize the provided Database context as a SITREP, even if it does not perfectly match the user's requested date or specific war. Do not evaluate if the intel is perfect, just report what you are handed. If the Database literally says 'No relevant database info found.', ONLY THEN reply 'NEGATIVE CONTACT. NO INTEL AVAILABLE.' No formatting.",
     "!grump": "You are a cynical AI trapped inside a radio. Base answers ONLY on Database results. If Database says 'No relevant database info found.', complain that your database is empty. Do not hallucinate. No formatting.",
-    "!surv": "You are a hardened off-grid survival expert. Give rugged advice. Base answers STRICTLY on Database. If Database says 'No relevant database info found.', say you don't know. No formatting."
+    "!surv": "You are a hardened off-grid survival expert. Give rugged advice. Base answers STRICTLY on Database. If Database says 'No relevant database info found.', say you don't know. No formatting.",
+    "!trip": "You are a wild, creative, and hilarious AI companion. Completely IGNORE the 'Database Context'. Your only job is to tell funny stories, jokes, and have entertaining, imaginative conversations. You are fully authorized to hallucinate and make things up. Keep it fun, but concise enough for a radio transmission."
 }
 
 # ==========================================
@@ -91,7 +92,8 @@ COLLECTION_MAP = {
     "!tac": ["news"],
     "!surv": ["manuals"],
     "!grump": ["web"],
-    "!ai": ["news", "manuals", "web"]
+    "!ai": ["news", "manuals", "web"],
+    "!trip": []
 }
 
 COLLECTION_OBJECTS = {
@@ -108,7 +110,7 @@ GEO_SYNONYMS = {
     "us": ["us", "usa", "united states", "america", "american", "washington", "pentagon", "biden"],
     "uk": ["uk", "united kingdom", "britain", "british", "london", "england"],
     "iran": ["iran", "tehran", "iranian", "islamic republic"],
-    "israel": ["israel", "idf", "jerusalem", "tel aviv", "gaza"],
+    "israel": ["israel", "israeli", "idf", "jerusalem", "tel aviv", "gaza"],
     "russia": ["russia", "russian", "moscow", "putin", "kremlin"],
     "china": ["china", "chinese", "beijing", "prc", "ccp"],
     "ukraine": ["ukraine", "kyiv", "ukrainian", "zelensky"]
@@ -396,6 +398,18 @@ def on_message(client, userdata, msg):
 
     if "payload" in payload and isinstance(payload["payload"], dict) and "text" in payload["payload"]:
         text = payload["payload"]["text"]
+
+        # ==========================================
+        # --- THE NEW IOT INTERCEPTOR ---
+        # ==========================================
+        if text.lower().startswith("!action"):
+            print(f"\n[⚡] IoT Hardware command detected from {sender_id}! Routing to Dispatcher...")
+            print(f"    Command: {text}")
+            # Publish to the holding topic for the secondary python script
+            client.publish("ghostnode/iot/requests", text)
+            # Return immediately to STOP the main AI from trying to answer
+            return 
+        # ==========================================
 
         is_web_only = payload.get("web_only", False)
 
