@@ -5,7 +5,7 @@ import warnings
 import logging
 import socket
 import requests
-import time  # <-- Added this so the 12-second delay works!
+import time
 from flask import Flask, request, jsonify, render_template_string
 import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
@@ -34,10 +34,37 @@ LISTEN_TOPIC = f"{ROOT_TOPIC}/#"
 C2_PUBLISH_TOPIC = f"{ROOT_TOPIC}/json/mqtt/WebUI"
 RADIO_PUBLISH_TOPIC = f"{ROOT_TOPIC}/json/mqtt/{HELTEC_HEX_ID}"
 
+IOT_LISTEN_TOPIC = "ghostnode/iot/#"
+IOT_REQUEST_TOPIC = "ghostnode/iot/requests"
+
 app = Flask(__name__)
+
+# --- CACHE BUSTING HEADERS ---
+@app.after_request
+def add_header(response):
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '-1'
+    return response
+
 mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
 
 chat_history = {"c2": [], "radio": []}
+msg_counter = {"c2": 0, "radio": 0}
+
+def add_c2_message(msg_data):
+    msg_counter["c2"] += 1
+    msg_data["id"] = msg_counter["c2"]
+    chat_history["c2"].append(msg_data)
+    if len(chat_history["c2"]) > 50: 
+        chat_history["c2"].pop(0)
+
+def add_radio_message(msg_data):
+    msg_counter["radio"] += 1
+    msg_data["id"] = msg_counter["radio"]
+    chat_history["radio"].append(msg_data)
+    if len(chat_history["radio"]) > 50: 
+        chat_history["radio"].pop(0)
 
 # ==========================================
 # 2. MQTT BACKGROUND LISTENER & SORTER
@@ -45,32 +72,52 @@ chat_history = {"c2": [], "radio": []}
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         client.subscribe(LISTEN_TOPIC)
+        client.subscribe(IOT_LISTEN_TOPIC) 
     else:
         print(f"[!] Dashboard MQTT Connection Failed: {rc}")
 
 def on_message(client, userdata, msg):
+    topic = msg.topic
+    
+    if topic.startswith("ghostnode/iot/basic") or topic.startswith("ghostnode/iot/claw"):
+        try:
+            payload_str = msg.payload.decode("utf-8")
+            parsed_json = json.loads(payload_str)
+            pretty_json = json.dumps(parsed_json, indent=2)
+            target = topic.split("/")[-1].upper()
+            
+            add_c2_message({
+                "sender": "Kinetic-Dispatcher",
+                "text": pretty_json,
+                "is_json": True,
+                "target_node": target
+            })
+            
+            # --- THE RESTORED TERMINAL JSON DUMP ---
+            print(f"\n[⚡] Dashboard intercepted Qwen JSON payload for {target} node:")
+            print(pretty_json)
+            print("-" * 40)
+            
+        except Exception:
+            pass 
+        return
+
     try:
         payload = json.loads(msg.payload.decode("utf-8"))
         
         if "payload" in payload and isinstance(payload["payload"], dict) and "text" in payload["payload"]:
             sender = str(payload.get("from", "Unknown"))
             text = payload["payload"]["text"]
-            
             incoming_channel = int(payload.get("channel", 0))
             
-            # Ignore echoes from our own node
             if sender == "Web-Dashboard" or sender == str(HELTEC_NODE_ID_DEC):
                 return
 
-            # --- AUTO-RESPONDER FOR FRIENDS ---
             if text.lower().startswith("!weather"):
-                chat_history["radio"].append({"sender": f"{sender} [Ch {incoming_channel}]", "text": text})
-                if len(chat_history["radio"]) > 50: chat_history["radio"].pop(0)
-                
+                add_radio_message({"sender": f"{sender} [Ch {incoming_channel}]", "text": text})
                 location = text[8:].strip()
                 api_reply = get_weather(location)
-                
-                chat_history["radio"].append({"sender": f"HQ-Auto [Ch {incoming_channel}]", "text": api_reply})
+                add_radio_message({"sender": f"HQ-Auto [Ch {incoming_channel}]", "text": api_reply})
                 
                 reply_payload = {
                     "channel": incoming_channel, 
@@ -82,14 +129,10 @@ def on_message(client, userdata, msg):
                 print(f"[🌤️] AUTO-REPLY: Sent weather to {sender} on Channel {incoming_channel}")
                 return 
 
-            # --- NORMAL SORTER FOR EVERYTHING ELSE ---
             elif sender == "AI-Bot" or text.startswith("!"):
-                chat_history["c2"].append({"sender": sender, "text": text})
-                if len(chat_history["c2"]) > 50: chat_history["c2"].pop(0)
+                add_c2_message({"sender": sender, "text": text})
             else:
-                chat_history["radio"].append({"sender": f"{sender} [Ch {incoming_channel}]", "text": text})
-                if len(chat_history["radio"]) > 50: chat_history["radio"].pop(0)
-
+                add_radio_message({"sender": f"{sender} [Ch {incoming_channel}]", "text": text})
     except Exception:
         pass
 
@@ -100,10 +143,9 @@ mqtt_client.on_message = on_message
 
 try:
     mqtt_client.connect(BROKER_IP, BROKER_PORT, 60)
+    threading.Thread(target=mqtt_client.loop_forever, daemon=True).start()
 except Exception as e:
     print(f"[!] Could not connect Dashboard to MQTT Broker: {e}")
-
-threading.Thread(target=mqtt_client.loop_forever, daemon=True).start()
 
 # ==========================================
 # 2.5 API FETCH FUNCTIONS
@@ -154,12 +196,16 @@ def index():
             input[type="text"]:focus { border-color: #ffffff; }
             
             select { padding: 12px; background: #2a2a2a; border: 1px solid #444; color: #ff9900; font-family: monospace; font-weight: bold; border-radius: 4px; outline: none; cursor: pointer; }
-            select:focus { border-color: #ff9900; }
             
             button { padding: 12px 15px; border: none; cursor: pointer; font-weight: bold; font-family: monospace; border-radius: 4px; transition: 0.2s; color: white;}
             .btn-silent { background: #333; } .btn-silent:hover { background: #555; }
             .btn-c2 { background: #006644; } .btn-c2:hover { background: #009966; }
             .btn-radio { background: #995500; } .btn-radio:hover { background: #cc7700; }
+
+            details { margin-top:5px; background:#111; padding:8px; border-radius:4px; border:1px solid #333; }
+            summary { cursor:pointer; color:#888; font-size:14px; outline:none; font-weight: bold;}
+            summary:hover { color:#00ffcc; }
+            .json-pre { color:#00ffcc; margin:8px 0 0 0; font-size:13px; white-space: pre-wrap; }
         </style>
     </head>
     <body>
@@ -167,10 +213,10 @@ def index():
         
         <div class="layout">
             <div class="panel panel-c2">
-                <h3 class="c2-title">🧠 AI Database Link</h3>
+                <h3 class="c2-title">🧠 AI Database Link & Kinetic C2</h3>
                 <div id="chat-box-c2" class="chat-box"></div>
                 <div class="input-area">
-                    <input type="text" id="cmd-input" placeholder="e.g., !tac Status report...">
+                    <input type="text" id="cmd-input" placeholder="!tac Status... OR !action turn on the led...">
                 </div>
                 <div style="display: flex; gap: 10px;">
                     <button type="button" class="btn-silent" onclick="sendC2(true)">[🤫] Ask Silently</button>
@@ -183,41 +229,69 @@ def index():
                 <div id="chat-box-radio" class="chat-box"></div>
                 <div class="input-area">
                     <select id="channel-select">
-                        <option value="0">Ch 0</option>
-                        <option value="1">Ch 1</option>
-                        <option value="2">Ch 2</option>
-                        <option value="3">Ch 3</option>
-                        <option value="4">Ch 4</option>
-                        <option value="5">Ch 5</option>
+                        <option value="0">Ch 0</option><option value="1">Ch 1</option>
+                        <option value="2">Ch 2</option><option value="3">Ch 3</option>
+                        <option value="4">Ch 4</option><option value="5">Ch 5</option>
                     </select>
-                    <input type="text" id="radio-input" placeholder="Type message to squad or !weather City...">
+                    <input type="text" id="radio-input" placeholder="Type message to squad or !weather...">
                 </div>
-                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <div style="display: flex; justify-content: flex-end;">
                     <button type="button" class="btn-radio" onclick="sendRadio()">[📡] Transmit to Mesh</button>
                 </div>
             </div>
         </div>
 
         <script>
+            let lastC2Id = 0;
+            let lastRadioId = 0;
+
             setInterval(async () => {
                 const response = await fetch('/messages');
                 const data = await response.json();
                 
                 const boxC2 = document.getElementById('chat-box-c2');
-                let htmlC2 = '';
+                let c2Updated = false;
+                
                 data.c2.forEach(msg => {
-                    let cssClass = msg.sender === 'Web-Dashboard' ? 'sender-you' : 'c2-sender';
-                    htmlC2 += `<div class="message"><span class="${cssClass}">[${msg.sender}]</span> ${msg.text}</div>`;
+                    if (msg.id > lastC2Id) {
+                        let div = document.createElement('div');
+                        div.className = 'message';
+                        
+                        if (msg.is_json) {
+                            div.innerHTML = `<span class="c2-sender" style="color:#ff00ff;">[🤖 QWEN -> ${msg.target_node} NODE]</span>
+                                       <details>
+                                           <summary>View Hardware JSON Payload</summary>
+                                           <pre class="json-pre">${msg.text}</pre>
+                                       </details>`;
+                        } else {
+                            let cssClass = msg.sender === 'Web-Dashboard' ? 'sender-you' : 'c2-sender';
+                            div.innerHTML = `<span class="${cssClass}">[${msg.sender}]</span> ${msg.text}`;
+                        }
+                        
+                        boxC2.appendChild(div);
+                        lastC2Id = msg.id;
+                        c2Updated = true;
+                    }
                 });
-                if (boxC2.innerHTML !== htmlC2) { boxC2.innerHTML = htmlC2; boxC2.scrollTop = boxC2.scrollHeight; }
+                if (c2Updated) boxC2.scrollTop = boxC2.scrollHeight;
 
                 const boxRadio = document.getElementById('chat-box-radio');
-                let htmlRadio = '';
+                let radioUpdated = false;
+                
                 data.radio.forEach(msg => {
-                    let cssClass = msg.sender.startsWith('HQ-') ? 'sender-you' : 'radio-sender';
-                    htmlRadio += `<div class="message"><span class="${cssClass}">[${msg.sender}]</span> ${msg.text}</div>`;
+                    if (msg.id > lastRadioId) {
+                        let div = document.createElement('div');
+                        div.className = 'message';
+                        
+                        let cssClass = msg.sender.startsWith('HQ-') ? 'sender-you' : 'radio-sender';
+                        div.innerHTML = `<span class="${cssClass}">[${msg.sender}]</span> ${msg.text}`;
+                        
+                        boxRadio.appendChild(div);
+                        lastRadioId = msg.id;
+                        radioUpdated = true;
+                    }
                 });
-                if (boxRadio.innerHTML !== htmlRadio) { boxRadio.innerHTML = htmlRadio; boxRadio.scrollTop = boxRadio.scrollHeight; }
+                if (radioUpdated) boxRadio.scrollTop = boxRadio.scrollHeight;
                 
             }, 1000);
 
@@ -237,14 +311,12 @@ def index():
                 const input = document.getElementById('radio-input');
                 const channelSelect = document.getElementById('channel-select');
                 const text = input.value.trim();
-                const channel = parseInt(channelSelect.value);
-
                 if (!text) return;
                 input.value = ''; 
                 await fetch('/send/radio', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: text, channel: channel })
+                    body: JSON.stringify({ text: text, channel: parseInt(channelSelect.value) })
                 });
             }
         </script>
@@ -265,11 +337,15 @@ def send_c2():
     
     if text:
         mode = "SILENT" if web_only else "BROADCAST"
-        chat_history["c2"].append({"sender": "Web-Dashboard", "text": f"[{mode}] {text}"})
+        add_c2_message({"sender": "Web-Dashboard", "text": f"[{mode}] {text}"})
         
-        payload = {"from": "Web-Dashboard", "channel": 2, "web_only": web_only, "payload": {"text": text}}
-        mqtt_client.publish(C2_PUBLISH_TOPIC, json.dumps(payload, ensure_ascii=False))
-        print(f"[💻] C2 ACTION: Sent {mode} AI command.")
+        if text.lower().startswith("!action"):
+            mqtt_client.publish(IOT_REQUEST_TOPIC, text)
+            print(f"[💻] KINETIC ROUTE: Passed '{text}' to Qwen Dispatcher.")
+        else:
+            payload = {"from": "Web-Dashboard", "channel": 2, "web_only": web_only, "payload": {"text": text}}
+            mqtt_client.publish(C2_PUBLISH_TOPIC, json.dumps(payload, ensure_ascii=False))
+            print(f"[💻] C2 ACTION: Sent {mode} AI command.")
         
     return jsonify({"status": "sent"})
 
@@ -280,7 +356,6 @@ def send_radio():
     channel = int(data.get("channel", 0))
     
     if raw_text:
-        # Determine if it's a Weather API call or Normal Text
         if raw_text.lower().startswith("!weather"):
             location = raw_text[8:].strip() 
             text_to_send = get_weather(location)
@@ -289,60 +364,37 @@ def send_radio():
             text_to_send = raw_text
             display_sender = f"HQ-Op [Ch {channel}]"
 
-        # 1. Instantly display the full message in the Web UI
-        chat_history["radio"].append({"sender": display_sender, "text": text_to_send})
+        add_radio_message({"sender": display_sender, "text": text_to_send})
         
-        # 2. Define the background chunking process
         def background_transmit(full_text, ch):
-            max_chunk_length = 190 # Safe limit leaving room for the (1/3) tag
+            max_chunk_length = 190 
             words = full_text.split()
-            chunks = []
-            current_chunk = ""
+            chunks, current_chunk = [], ""
             
             for word in words:
                 if len(current_chunk) + len(word) + 1 > max_chunk_length:
-                    if current_chunk:
-                        chunks.append(current_chunk)
+                    if current_chunk: chunks.append(current_chunk)
                     current_chunk = word
                 else:
-                    if current_chunk:
-                        current_chunk += " " + word
-                    else:
-                        current_chunk = word
-            if current_chunk:
-                chunks.append(current_chunk)
+                    current_chunk = current_chunk + " " + word if current_chunk else word
+            if current_chunk: chunks.append(current_chunk)
 
             total_chunks = len(chunks)
-
-            # Loop through and send each chunk
             for i, chunk in enumerate(chunks):
-                if total_chunks > 1:
-                    final_text = f"{chunk} ({i+1}/{total_chunks})"
-                else:
-                    final_text = chunk
-                
-                payload = {
-                    "channel": ch, 
-                    "from": HELTEC_NODE_ID_DEC, 
-                    "type": "sendtext",
-                    "payload": final_text
-                }
+                final_text = f"{chunk} ({i+1}/{total_chunks})" if total_chunks > 1 else chunk
+                payload = {"channel": ch, "from": HELTEC_NODE_ID_DEC, "type": "sendtext", "payload": final_text}
                 mqtt_client.publish(RADIO_PUBLISH_TOPIC, json.dumps(payload, ensure_ascii=False))
+                
                 print(f"[🎙️] Transmitted Part {i+1}/{total_chunks} on Channel {ch}: '{final_text}'")
                 
-                # Apply the 12-second delay to protect the radio mesh
                 if total_chunks > 1 and i < total_chunks - 1:
                     print(f"[⌛] Waiting 12 seconds for radio duty cycle...")
                     time.sleep(12)
 
-        # 3. Spin up the background thread so the web UI stays lightning fast
         threading.Thread(target=background_transmit, args=(text_to_send, channel)).start()
             
     return jsonify({"status": "sent"})
 
-# ==========================================
-# START FLASK & PRINT IPs
-# ==========================================
 def get_local_ip():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
