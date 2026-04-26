@@ -1,7 +1,9 @@
-📻 GhostNode-AI: Off-Grid Tactical Mesh Server (LoRa / MQTT)
-GhostNode-AI is a fully offline, autonomous AI "Librarian," Tactical Assistant, and Command & Control (C2) Dashboard designed for Meshtastic LoRa networks.
+# 📻 GhostNode-AI: Off-Grid Tactical Mesh Server & Kinetic Dispatcher (LoRa / MQTT)
 
-It operates entirely independent of the internet, scraping global intelligence and reading offline manuals into a local multi-collection vector database. It then answers queries from users on the mesh, broadcasting intelligent, context-aware answers over encrypted radio channels using strict transmission chunking to protect network bandwidth.
+GhostNode-AI is a fully offline, autonomous AI "Librarian," Tactical Assistant, Command & Control (C2) Dashboard, and **Kinetic Hardware Dispatcher** designed for Meshtastic LoRa networks. 
+
+It operates entirely independent of the internet, scraping global intelligence and reading offline manuals into a local multi-collection vector database. It broadcasts intelligent, context-aware answers over encrypted radio channels using strict transmission chunking. **With the V3 update, it now bridges the gap between digital intelligence and physical hardware**, allowing users to control local edge devices (relays, sensors, and servos) via natural language over the radio mesh.
+
 <img width="2752" height="1536" alt="{__image_generation_instructions___{_202604222223" src="https://github.com/user-attachments/assets/c6c35e21-cc6c-4840-8ab0-ae692a951e6a" />
 
 ⚠️ IMPORTANT: Running this on lower-end hardware? > The default model requires 24GB of RAM. If you are using a standard laptop or a Raspberry Pi, Please read the AI Model & Hardware Selection Guide to swap to a lighter model before continuing.
