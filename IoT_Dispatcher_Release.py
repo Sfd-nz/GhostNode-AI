@@ -3,6 +3,7 @@ import json
 import requests
 import os
 import threading
+import time
 from dotenv import load_dotenv
 
 # ==========================================
@@ -18,183 +19,189 @@ MQTT_PASS = os.getenv("MQTT_PASS", "")
 OLLAMA_GENERATE_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/chat").replace("/chat", "/generate")
 CODER_MODEL = os.getenv("CODER_MODEL", "qwen2.5-coder:7b")
 
-# --- RADIO FEEDBACK CONFIG ---
 HELTEC_NODE_ID_DEC = int(os.getenv("HELTEC_NODE_ID_DEC", "0"))
 HELTEC_HEX_ID = "!" + hex(HELTEC_NODE_ID_DEC)[2:]
 ROOT_TOPIC = os.getenv("LISTEN_TOPIC", "msh/2/#").split("/#")[0]
 RADIO_PUBLISH_TOPIC = f"{ROOT_TOPIC}/json/mqtt/{HELTEC_HEX_ID}"
 
+PRIMARY_CHANNEL = int(os.getenv("ALLOWED_AI_CHANNELS", "2").split(",")[0])
 LISTEN_TOPIC = "ghostnode/iot/requests"
-
-# --- THE FORKED TOPICS ---
-PUBLISH_TOPIC_BASIC = "ghostnode/iot/basic"  # For dumb Arduino/MQTT nodes
-PUBLISH_TOPIC_CLAW = "ghostnode/iot/claw"    # For smart ESP-Claw nodes
+TELEMETRY_TOPIC = "ghostnode/iot/telemetry"
+PUBLISH_TOPIC_BASIC = "ghostnode/iot/basic"
 
 # ==========================================
-# 2. THE DUAL SYSTEM PROMPTS
+# 2. THE SYSTEM PROMPT
 # ==========================================
-
-# Prompt 1: For your lightweight custom scripts (Arduino)
-PROMPT_BASIC = """You are a headless IoT routing engine controlling basic MQTT hardware.
+PROMPT_BASIC = """You are a headless IoT routing engine controlling tactical hardware.
 Convert natural language into strict JSON. DO NOT output conversational text.
-Your hardware expects simple toggles.
-Example:
-{
-  "target": "gate_relay",
-  "action": "open"
-}
-"""
 
-# Prompt 2: For your heavy ESP-Claw framework nodes
-PROMPT_CLAW = """You are an advanced AI agent controlling an ESP-Claw edge node.
-Convert natural language into strict JSON. DO NOT output conversational text.
-You MUST adhere strictly to the following hardware capabilities. Do not invent parameters.
+RULES:
+1. Extract the specific device name as 'node_id'. If no specific device is named, use 'all'.
+2. Identify the 'target' (e.g., led, relay, pan_servo, temperature_sensor).
+3. For the 'action' field, use ONLY these verbs: "ON", "OFF", "OPEN", "CLOSE", "SET", "MOVE", or "READ".
+4. If the user specifies a number, angle, or percentage, include it in a 'value' field (as an integer). 
+5. If the user asks for data or status (e.g., "what is the temperature", "check the sensor"), the action MUST be "READ".
 
-HARDWARE PROFILE: "robotic_head"
-- description: A 2-axis servo mount.
-- allowed actions: "move_to", "sweep", "center"
-- parameters for "move_to": 
-    "pan_angle" (integer 0-180, where 90 is center, 180 is right)
-    "tilt_angle" (integer 0-180, where 90 is center, 180 is up)
-- parameters for "sweep":
-    "axis" (string: "pan", "tilt", or "both")
-    "speed" (integer 1-10)
-
-Example Request: "look to your top right"
-Example JSON:
-{
-  "target": "robotic_head",
-  "action": "move_to",
-  "parameters": {
-    "pan_angle": 180,
-    "tilt_angle": 180
-  }
-}
-
-Example Request: "sweep left and right"
-Example JSON:
-{
-  "target": "robotic_head",
-  "action": "sweep",
-  "parameters": {
-    "axis": "pan",
-    "speed": 5
-  }
-}
+Example: "what is the temperature at node charlie?"
+{"node_id": "charlie", "target": "temperature_sensor", "action": "READ"}
 """
 
 # ==========================================
-# 3. ASK OLLAMA (THE CODER BRAIN)
+# 3. TELEMETRY AGGREGATOR (THE BUFFER)
+# ==========================================
+telemetry_buffer = []
+buffer_timer = None
+
+def flush_telemetry_buffer(mqtt_client):
+    global telemetry_buffer
+    if not telemetry_buffer:
+        return
+        
+    # Combine all caught sensor readings into one string
+    combined_text = "[SENSORS] " + " | ".join(telemetry_buffer)
+    telemetry_buffer.clear()
+    
+    # --- CHUNKING LOGIC FOR LORA LIMITS ---
+    max_chunk_length = 190
+    words = combined_text.split()
+    chunks, current_chunk = [], ""
+    
+    for word in words:
+        if len(current_chunk) + len(word) + 1 > max_chunk_length:
+            if current_chunk: chunks.append(current_chunk)
+            current_chunk = word
+        else:
+            current_chunk = current_chunk + " " + word if current_chunk else word
+    if current_chunk: chunks.append(current_chunk)
+
+    total_chunks = len(chunks)
+    for i, chunk in enumerate(chunks):
+        final_text = f"{chunk} ({i+1}/{total_chunks})" if total_chunks > 1 else chunk
+        
+        reply_payload = {
+            "channel": PRIMARY_CHANNEL,  
+            "from": HELTEC_NODE_ID_DEC, 
+            "type": "sendtext",
+            "payload": final_text
+        }
+        mqtt_client.publish(RADIO_PUBLISH_TOPIC, json.dumps(reply_payload), retain=True)
+        print(f"[📡] Broadcasted Aggregated Telemetry: {final_text}")
+        
+        # Duty cycle wait if we have multiple chunks to send
+        if total_chunks > 1 and i < total_chunks - 1:
+            time.sleep(12) 
+
+# ==========================================
+# 4. ASK OLLAMA
 # ==========================================
 def translate_to_json(user_command):
-    # Strip the base "!action" trigger
     clean_command = user_command.lower().replace("!action", "").strip()
+    send_via_lora = False
+    if clean_command.startswith("lora"):
+        send_via_lora = True
+        clean_command = clean_command[4:].strip()
     
-    # --- THE ROUTING LOGIC ---
-    if clean_command.startswith("edge") or clean_command.startswith("claw"):
-        # It's a Smart Node command!
-        target_topic = PUBLISH_TOPIC_CLAW
-        active_prompt = PROMPT_CLAW
-        # Remove the trigger word so the AI just sees the command
-        clean_command = clean_command.replace("edge", "").replace("claw", "").strip()
-        print(f"\n[🤖] Smart Node (ESP-Claw) request detected!")
-    else:
-        # It's a Basic Node command!
-        target_topic = PUBLISH_TOPIC_BASIC
-        active_prompt = PROMPT_BASIC
-        print(f"\n[💡] Basic Node (MQTT) request detected!")
-
     print(f"[🧠] Spinning up {CODER_MODEL} for command: '{clean_command}'")
-    
-    full_prompt = f"{active_prompt}\n\nUser Command: {clean_command}\nOutput strictly valid JSON:"
+    full_prompt = f"{PROMPT_BASIC}\n\nUser Command: {clean_command}\nOutput strictly valid JSON:"
 
     payload = {
-        "model": CODER_MODEL,
-        "prompt": full_prompt,
-        "stream": False,
-        "format": "json",      
-        "keep_alive": 0        
+        "model": CODER_MODEL, "prompt": full_prompt, 
+        "stream": False, "format": "json", "keep_alive": 0        
     }
-
     try:
         response = requests.post(OLLAMA_GENERATE_URL, json=payload, timeout=60)
         response.raise_for_status()
-        
-        reply_json_str = response.json().get("response", "").strip()
-        return reply_json_str, target_topic 
-
+        return response.json().get("response", "").strip(), PUBLISH_TOPIC_BASIC, send_via_lora
     except Exception as e:
         print(f"[!] Ollama generation error: {e}")
-        return None, None
+        return None, None, False
 
 # ==========================================
-# 4. MQTT EVENT LOOP
+# 5. MQTT EVENT PROCESSOR
 # ==========================================
 def process_request(text, client):
-    # Pass to Ollama and get both the payload and the correct topic back
-    json_payload, target_topic = translate_to_json(text)
+    json_payload, base_topic, send_via_lora = translate_to_json(text)
     
-    if json_payload and target_topic:
-        print(f"[⚡] Generated JSON payload:\n{json_payload}")
-        
+    if json_payload and base_topic:
         try:
             parsed_check = json.loads(json_payload)
-            client.publish(target_topic, json_payload)
-            print(f"[✅] Payload published to {target_topic}")
+            raw_node_id = parsed_check.get("node_id", "all")
+            safe_node_id = str(raw_node_id).lower().strip().replace(" ", "_")
+            dynamic_target_topic = f"{base_topic}/{safe_node_id}"
+            
+            client.publish(dynamic_target_topic, json_payload)
 
-            # ==========================================
-            # --- THE NEW FEEDBACK LOOP ---
-            # ==========================================
-            node_type = "Basic Node" if "basic" in target_topic else "ESP-Claw"
-            
-            # Clean up the text for the reply summary
-            clean_command = text.lower().replace("!action", "").replace("edge", "").replace("claw", "").strip()
-            confirmation_text = f"[DISPATCH] Sent '{clean_command}' to {node_type}."
-            
-            # Build the exact payload your Heltec/LilyGo radio expects
-            reply_payload = {
-                "channel": 2,  
-                "from": HELTEC_NODE_ID_DEC, 
-                "type": "sendtext",
-                "payload": confirmation_text
-            }
-            
-            # Broadcast it directly to the radio!
-            client.publish(RADIO_PUBLISH_TOPIC, json.dumps(reply_payload), retain=True)
-            print(f"[📡] Radio confirmation transmitted: '{confirmation_text}'")
-            # ==========================================
+            if send_via_lora:
+                minified_json = json.dumps(parsed_check, separators=(',', ':'))
+                lora_command_string = f"!C2:{dynamic_target_topic}:{minified_json}"
+                lora_cmd_payload = {"channel": PRIMARY_CHANNEL, "from": HELTEC_NODE_ID_DEC, "type": "sendtext", "payload": lora_command_string}
+                client.publish(RADIO_PUBLISH_TOPIC, json.dumps(lora_cmd_payload), retain=True)
+
+            action_type = parsed_check.get("action", "").upper()
+            if action_type not in ["READ", "GET", "CHECK"]:
+                time.sleep(8) 
+                target_device = parsed_check.get("target", "device").upper()
+                confirmation_text = f"[DISPATCH] {safe_node_id.upper()} {target_device} -> {action_type}"
+                reply_payload = {"channel": PRIMARY_CHANNEL, "from": HELTEC_NODE_ID_DEC, "type": "sendtext", "payload": confirmation_text}
+                client.publish(RADIO_PUBLISH_TOPIC, json.dumps(reply_payload), retain=True)
 
         except json.JSONDecodeError:
             print(f"[❌] AI failed to generate valid JSON. Dropping payload.")
-    else:
-        print("[!] No response from AI. Dropping.")
 
+# ==========================================
+# 6. THE MAIN LISTENER LOOP
+# ==========================================
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         print(f"[+] Dispatcher connected to Broker at {BROKER_IP}")
         client.subscribe(LISTEN_TOPIC)
-        print(f"[+] Listening strictly on {LISTEN_TOPIC} for IoT handoffs...")
-        print(f"[+] Routing to -> {PUBLISH_TOPIC_BASIC} (Basic) and {PUBLISH_TOPIC_CLAW} (Claw)")
-    else:
-        print(f"[!] Dispatcher failed to connect to Broker, return code {rc}")
+        client.subscribe(TELEMETRY_TOPIC)
+        print(f"[+] Listening strictly on {LISTEN_TOPIC} for Basic IoT handoffs...")
+        print(f"[+] Listening strictly on {TELEMETRY_TOPIC} for returning sensor data...")
 
 def on_message(client, userdata, msg):
+    topic = msg.topic
     incoming_text = msg.payload.decode("utf-8")
-    threading.Thread(target=process_request, args=(incoming_text, client)).start()
+
+    # --- CATCH TELEMETRY AND ADD TO BUFFER ---
+    if topic == TELEMETRY_TOPIC:
+        try:
+            telemetry_data = json.loads(incoming_text)
+            node = telemetry_data.get("node_id", "UNKNOWN").upper()
+            value = telemetry_data.get("value", "N/A")
+            
+            # Create a tiny string like "ALPHA: 22.5"
+            mini_text = f"{node}: {value}"
+            
+            global telemetry_buffer, buffer_timer
+            telemetry_buffer.append(mini_text)
+            
+            # Reset the 3-second flush timer every time a new reading comes in
+            if buffer_timer:
+                buffer_timer.cancel()
+            buffer_timer = threading.Timer(3.0, flush_telemetry_buffer, args=[client])
+            buffer_timer.start()
+            
+            print(f"[⏱️] Added {node} to telemetry buffer. Waiting for others...")
+        except Exception as e:
+            print(f"[!] Failed to route telemetry to buffer: {e}")
+        return 
+
+    # --- OUTBOUND PATH: ROUTE COMMANDS TO QWEN ---
+    if topic == LISTEN_TOPIC:
+        threading.Thread(target=process_request, args=(incoming_text, client)).start()
 
 # ==========================================
 # START ENGINE
 # ==========================================
 if __name__ == "__main__":
-    print(f"=== Starting DUAL-PATH IoT Dispatcher Brain ({CODER_MODEL}) ===")
+    print(f"=== Starting KINETIC IoT Dispatcher ({CODER_MODEL}) ===")
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
-
     if MQTT_USER and MQTT_PASS:
         client.username_pw_set(MQTT_USER, MQTT_PASS)
-
+        
     client.on_connect = on_connect
     client.on_message = on_message
-
     try:
         client.connect(BROKER_IP, BROKER_PORT, 60)
         client.loop_forever()
