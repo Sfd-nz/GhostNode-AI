@@ -135,52 +135,6 @@ Dynamic Channel Routing: Send manual human messages or broadcast AI intel to spe
 
 Auto-Responder Intercepts: Squad mates can text !weather [City] over the radio, and the dashboard will silently fetch the internet data and broadcast the clean weather report automatically.
 
-```mermaid
-graph TD
-    %% Script 1 Workflow
-    subgraph Script 1: Database Ingestion
-        A[Dropzone PDFs & TXTs] -->|Read & Parse| C[(ChromaDB Vector Store)]
-        B[RSS Feeds / Web] -->|Stealth Scrape| C
-    end
-
-    %% Script 2 Workflow
-    subgraph Script 2: The Radio Brain
-        E[Local MQTT Broker] -->|Receives Private Chat| D{Python Radio Router}
-        D <-->|1. Queries Context| C
-        D <-->|2. Sends Chat + DB Info| F[Ollama Local LLM]
-        D -->|3. Sends Chunked Reply| E
-    end
-
-    %% Script 3 Workflow (NEW: Operations Center)
-    subgraph Script 3: C2 Web Dashboard
-        E <-->|Publishes / Subscribes| W[Flask Web UI]
-        W -.->|Displays| X[Live Squad Comms]
-        W -.->|Intercepts & Highlights| Y[Live Sensor Telemetry]
-    end
-
-    %% Script 4 Workflow (UPDATED: Bidirectional Dispatcher)
-    subgraph Script 4: Kinetic SCADA Dispatcher
-        E -->|Receives !action Command| I{IoT Dispatcher Router}
-        I <-->|1. Ask Qwen for JSON| F
-        I -->|2. Route JSON to Node| E
-        E -->|3. Catch Sensor Telemetry| I
-        I -->|4. Buffer, Chunk & Broadcast to Radio| E
-    end
-
-    %% Hardware/Mesh Workflow
-    subgraph LoRa Mesh Network
-        G(Base Station / Node A) <-->|WiFi Connect| E
-        G <-->|LoRa Encrypted RF| H(Remote User / Node B)
-    end
-
-    %% Edge Nodes Workflow (UPDATED: Telemetry Loop)
-    subgraph Kinetic Edge Nodes
-        E -->|JSON Cmd: /basic/node_name| J[ESP32 Edge Node]
-        J -.->|Action: ON/OFF/MOVE| L((LED / Relay / Servo))
-        J -.->|Action: READ| M((DHT11 Temp/Humid Sensor))
-        J -->|Publishes JSON: /telemetry| E
-    end
-```
 
 ## 🧩 Phase 7: Modular Deployments (Microservice Architecture)
 
@@ -230,3 +184,50 @@ For commercial licensing, project collaborations, or just to share pictures of y
 
 * **Twitter / X:** [Profile](https://x.com/DigbySharples)
 * **Facebook:** [Profile](https://www.facebook.com/Mr.Sinical)
+
+```mermaid
+graph TD
+    %% Script 1 Workflow
+    subgraph Script 1: Database Ingestion
+        A[Dropzone PDFs & TXTs] -->|Read & Parse| C[(ChromaDB Vector Store)]
+        B[RSS Feeds / Web] -->|Stealth Scrape| C
+    end
+
+    %% Script 2 Workflow
+    subgraph Script 2: The Radio Brain
+        E[Local MQTT Broker] -->|Receives Private Chat| D{Python Radio Router}
+        D <-->|1. Queries Context| C
+        D <-->|2. Sends Chat + DB Info| F[Ollama Local LLM]
+        D -->|3. Sends Chunked Reply| E
+    end
+
+    %% Script 3 Workflow (NEW: Operations Center)
+    subgraph Script 3: C2 Web Dashboard
+        E <-->|Publishes / Subscribes| W[Flask Web UI]
+        W -.->|Displays| X[Live Squad Comms]
+        W -.->|Intercepts & Highlights| Y[Live Sensor Telemetry]
+    end
+
+    %% Script 4 Workflow (UPDATED: Bidirectional Dispatcher)
+    subgraph Script 4: Kinetic SCADA Dispatcher
+        E -->|Receives !action Command| I{IoT Dispatcher Router}
+        I <-->|1. Ask Qwen for JSON| F
+        I -->|2. Route JSON to Node| E
+        E -->|3. Catch Sensor Telemetry| I
+        I -->|4. Buffer, Chunk & Broadcast to Radio| E
+    end
+
+    %% Hardware/Mesh Workflow
+    subgraph LoRa Mesh Network
+        G(Base Station / Node A) <-->|WiFi Connect| E
+        G <-->|LoRa Encrypted RF| H(Remote User / Node B)
+    end
+
+    %% Edge Nodes Workflow (UPDATED: Telemetry Loop)
+    subgraph Kinetic Edge Nodes
+        E -->|JSON Cmd: /basic/node_name| J[ESP32 Edge Node]
+        J -.->|Action: ON/OFF/MOVE| L((LED / Relay / Servo))
+        J -.->|Action: READ| M((DHT11 Temp/Humid Sensor))
+        J -->|Publishes JSON: /telemetry| E
+    end
+
