@@ -185,6 +185,7 @@ For commercial licensing, project collaborations, or just to share pictures of y
 * **Twitter / X:** [Profile](https://x.com/DigbySharples)
 * **Facebook:** [Profile](https://www.facebook.com/Mr.Sinical)
 
+
 ```mermaid
 graph TD
     %% Script 1 Workflow
@@ -230,4 +231,4 @@ graph TD
         J -.->|Action: READ| M((DHT11 Temp/Humid Sensor))
         J -->|Publishes JSON: /telemetry| E
     end
-
+```
