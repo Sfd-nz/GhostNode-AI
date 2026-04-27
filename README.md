@@ -151,12 +151,20 @@ graph TD
         D -->|3. Sends Chunked Reply| E
     end
 
-    %% Script 3 Workflow (NEW: The 4th Pillar)
-    subgraph Script 3: Kinetic Dispatcher
+    %% Script 3 Workflow (NEW: Operations Center)
+    subgraph Script 3: C2 Web Dashboard
+        E <-->|Publishes / Subscribes| W[Flask Web UI]
+        W -.->|Displays| X[Live Squad Comms]
+        W -.->|Intercepts & Highlights| Y[Live Sensor Telemetry]
+    end
+
+    %% Script 4 Workflow (UPDATED: Bidirectional Dispatcher)
+    subgraph Script 4: Kinetic SCADA Dispatcher
         E -->|Receives !action Command| I{IoT Dispatcher Router}
-        I <-->|1. Sends Prompt for JSON| F
-        I -->|2. Publishes Strict JSON| E
-        I -->|3. Sends Radio Confirmation| E
+        I <-->|1. Ask Qwen for JSON| F
+        I -->|2. Route JSON to Node| E
+        E -->|3. Catch Sensor Telemetry| I
+        I -->|4. Buffer, Chunk & Broadcast to Radio| E
     end
 
     %% Hardware/Mesh Workflow
@@ -165,10 +173,10 @@ graph TD
         G <-->|LoRa Encrypted RF| H(Remote User / Node B)
     end
 
-    %% Edge Nodes Workflow (NEW: Physical Hardware)
+    %% Edge Nodes Workflow (UPDATED: Telemetry Loop)
     subgraph Kinetic Edge Nodes
-        E -->|JSON Payload: /basic topic| J[ESP32 Basic Node]
-        E -->|JSON Payload: /claw topic| K[ESP32-S3 Smart Node]
-        J -.->|Physical Action| L((LED / Relay))
-        K -.->|Physical Action| M((Multi-Axis Servo))
+        E -->|JSON Cmd: /basic/node_name| J[ESP32 Edge Node]
+        J -.->|Action: ON/OFF/MOVE| L((LED / Relay / Servo))
+        J -.->|Action: READ| M((DHT11 Temp/Humid Sensor))
+        J -->|Publishes JSON: /telemetry| E
     end
