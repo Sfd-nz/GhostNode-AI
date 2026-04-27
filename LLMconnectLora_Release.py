@@ -43,29 +43,54 @@ USE_DISTANCE_FILTER = os.getenv("USE_DISTANCE_FILTER", "false").lower() == "true
 MAX_DISTANCE = float(os.getenv("MAX_DISTANCE", "1.25"))
 
 # ==========================================
-# 2. DATABASE CLIENT & COLLECTION ROUTER
+# 2. DATABASE CLIENT & AUTO-HEAL
 # ==========================================
-try:
+def force_db_refresh():
+    """Dumps the stale RAM cache and reloads the fresh DB from disk after a prune."""
+    global chroma_client, col_news, col_manuals, col_web, COLLECTION_OBJECTS
+    try:
+        import chromadb.api.client
+        chromadb.api.client.SharedSystemClient.clear_system_cache()
+    except Exception:
+        pass
+    
     chroma_client = chromadb.PersistentClient(path=DB_PATH)
-
     col_news = chroma_client.get_or_create_collection(name="intel_news")
     col_manuals = chroma_client.get_or_create_collection(name="intel_manuals")
     col_web = chroma_client.get_or_create_collection(name="intel_web")
+    
+    COLLECTION_OBJECTS["news"] = col_news
+    COLLECTION_OBJECTS["manuals"] = col_manuals
+    COLLECTION_OBJECTS["web"] = col_web
 
+# Initial Boot Setup
+try:
+    chroma_client = chromadb.PersistentClient(path=DB_PATH)
+    col_news = chroma_client.get_or_create_collection(name="intel_news")
+    col_manuals = chroma_client.get_or_create_collection(name="intel_manuals")
+    col_web = chroma_client.get_or_create_collection(name="intel_web")
 except Exception as e:
     print(f"[!] CRITICAL: Could not connect to ChromaDB: {e}")
     raise SystemExit(1)
 
-def safe_query(collection, query_embeddings, n_results, where=None):
+def safe_query(col_obj, query_embeddings, n_results, where=None):
     retries = 5
     for attempt in range(retries):
         try:
             if where:
-                return collection.query(query_embeddings=query_embeddings, n_results=n_results, where=where)
+                return col_obj.query(query_embeddings=query_embeddings, n_results=n_results, where=where)
             else:
-                return collection.query(query_embeddings=query_embeddings, n_results=n_results)
+                return col_obj.query(query_embeddings=query_embeddings, n_results=n_results)
         except Exception as e:
-            if "locked" in str(e).lower() and attempt < retries - 1:
+            err_str = str(e).lower()
+            if "error finding id" in err_str:
+                print(f"\n[🔧] AUTO-HEAL TRIGGERED: Scraper pruned the DB. Reloading stale RAM cache...")
+                force_db_refresh()
+                # Update the specific collection reference for the retry
+                col_name = col_obj.name
+                col_obj = chroma_client.get_collection(col_name) 
+                time.sleep(0.5)
+            elif "locked" in err_str and attempt < retries - 1:
                 time.sleep(random.uniform(0.2, 0.8))
             else:
                 raise e
@@ -78,7 +103,6 @@ conversation_history = {"!ai": {}, "!tac": {}, "!grump": {}, "!surv": {}, "!trip
 
 PERSONAS = {
     "!ai": "You are an off-grid AI on a low-bandwidth radio. Answer directly. DO NOT repeat the prompt. Base answers STRICTLY on the Database results. If Database says 'No relevant database info found.', you MUST reply 'Error: No data available.' Do NOT invent answers.",
-    # --- THE FIX: FORCING THE SITREP ---
     "!tac": "You are a tactical radio operator. Use military brevity. You MUST summarize the provided Database context as a SITREP, even if it does not perfectly match the user's requested date or specific war. Do not evaluate if the intel is perfect, just report what you are handed. If the Database literally says 'No relevant database info found.', ONLY THEN reply 'NEGATIVE CONTACT. NO INTEL AVAILABLE.' No formatting.",
     "!grump": "You are a cynical AI trapped inside a radio. Base answers ONLY on Database results. If Database says 'No relevant database info found.', complain that your database is empty. Do not hallucinate. No formatting.",
     "!surv": "You are a hardened off-grid survival expert. Give rugged advice. Base answers STRICTLY on Database. If Database says 'No relevant database info found.', say you don't know. No formatting.",
@@ -170,14 +194,12 @@ def rag_query(trigger, question_vector, user_question):
 
             dropped = 0
             
-            # --- CALIBRATION PRINT BLOCK ---
             print(f"\n[📊] --- CALIBRATION MODE: DISTANCE SCORES ---")
             
             for d, m, dist in zip(docs, metas, dists):
                 if not d:
                     continue
                 
-                # Print the exact score for you to see
                 if dist is not None:
                     score_val = float(dist)
                     title = m.get('title', 'Unknown Title') if m else 'Unknown'
@@ -400,14 +422,12 @@ def on_message(client, userdata, msg):
         text = payload["payload"]["text"]
 
         # ==========================================
-        # --- THE NEW IOT INTERCEPTOR ---
+        # --- THE IOT INTERCEPTOR ---
         # ==========================================
         if text.lower().startswith("!action"):
             print(f"\n[⚡] IoT Hardware command detected from {sender_id}! Routing to Dispatcher...")
             print(f"    Command: {text}")
-            # Publish to the holding topic for the secondary python script
             client.publish("ghostnode/iot/requests", text)
-            # Return immediately to STOP the main AI from trying to answer
             return 
         # ==========================================
 
