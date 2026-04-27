@@ -36,10 +36,10 @@ RADIO_PUBLISH_TOPIC = f"{ROOT_TOPIC}/json/mqtt/{HELTEC_HEX_ID}"
 
 IOT_LISTEN_TOPIC = "ghostnode/iot/#"
 IOT_REQUEST_TOPIC = "ghostnode/iot/requests"
+TELEMETRY_TOPIC = "ghostnode/iot/telemetry"
 
 app = Flask(__name__)
 
-# --- CACHE BUSTING HEADERS ---
 @app.after_request
 def add_header(response):
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
@@ -71,15 +71,36 @@ def add_radio_message(msg_data):
 # ==========================================
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
+        # THE FIX: IOT_LISTEN_TOPIC (ghostnode/iot/#) already grabs the telemetry folder.
+        # Subscribing to TELEMETRY_TOPIC explicitly causes the double-echo. 
         client.subscribe(LISTEN_TOPIC)
-        client.subscribe(IOT_LISTEN_TOPIC) 
+        client.subscribe(IOT_LISTEN_TOPIC)
+        print(f"[+] Dashboard MQTT Connected! Listening on {LISTEN_TOPIC} and {IOT_LISTEN_TOPIC}")
     else:
         print(f"[!] Dashboard MQTT Connection Failed: {rc}")
 
 def on_message(client, userdata, msg):
     topic = msg.topic
     
-    if topic.startswith("ghostnode/iot/basic") or topic.startswith("ghostnode/iot/claw"):
+    # --- CATCH TELEMETRY DATA ---
+    if topic == TELEMETRY_TOPIC:
+        try:
+            telemetry_data = json.loads(msg.payload.decode("utf-8"))
+            node = telemetry_data.get("node_id", "UNKNOWN").upper()
+            sensor = telemetry_data.get("sensor", "sensor").upper()
+            value = telemetry_data.get("value", "N/A")
+            
+            display_text = f"[📡 SENSOR REPORT] {node} {sensor}: {value}"
+            add_c2_message({"sender": "Telemetry-Hub", "text": display_text})
+            
+            # Restored Terminal Debug
+            print(f"\n[📡] TELEMETRY DASH INTERCEPT: {node} {sensor} = {value}")
+        except Exception:
+            pass
+        return
+
+    # --- CATCH QWEN JSON COMMANDS ---
+    if topic.startswith("ghostnode/iot/basic"):
         try:
             payload_str = msg.payload.decode("utf-8")
             parsed_json = json.loads(payload_str)
@@ -102,6 +123,7 @@ def on_message(client, userdata, msg):
             pass 
         return
 
+    # --- CATCH STANDARD RADIO COMMS ---
     try:
         payload = json.loads(msg.payload.decode("utf-8"))
         
@@ -126,6 +148,8 @@ def on_message(client, userdata, msg):
                     "payload": api_reply
                 }
                 mqtt_client.publish(RADIO_PUBLISH_TOPIC, json.dumps(reply_payload, ensure_ascii=False))
+                
+                # Restored Terminal Debug
                 print(f"[🌤️] AUTO-REPLY: Sent weather to {sender} on Channel {incoming_channel}")
                 return 
 
@@ -158,6 +182,7 @@ def get_weather(location="Auckland"):
         response.encoding = 'utf-8' 
         return f"[WEATHER] {response.text.strip()}"
     except Exception as e:
+        # Restored Terminal Debug
         print(f"[!] Weather API Error: {e}")
         return f"[!] Error fetching weather for {location}."
 
@@ -265,6 +290,10 @@ def index():
                                        </details>`;
                         } else {
                             let cssClass = msg.sender === 'Web-Dashboard' ? 'sender-you' : 'c2-sender';
+                            if (msg.sender === 'Telemetry-Hub') {
+                                cssClass = 'c2-sender';
+                                div.style.color = '#ffff00'; // Highlight telemetry in yellow
+                            }
                             div.innerHTML = `<span class="${cssClass}">[${msg.sender}]</span> ${msg.text}`;
                         }
                         
@@ -341,11 +370,13 @@ def send_c2():
         
         if text.lower().startswith("!action"):
             mqtt_client.publish(IOT_REQUEST_TOPIC, text)
-            print(f"[💻] KINETIC ROUTE: Passed '{text}' to Qwen Dispatcher.")
+            # Restored Terminal Debug
+            print(f"\n[💻] KINETIC ROUTE: Passed '{text}' to Qwen Dispatcher.")
         else:
             payload = {"from": "Web-Dashboard", "channel": 2, "web_only": web_only, "payload": {"text": text}}
             mqtt_client.publish(C2_PUBLISH_TOPIC, json.dumps(payload, ensure_ascii=False))
-            print(f"[💻] C2 ACTION: Sent {mode} AI command.")
+            # Restored Terminal Debug
+            print(f"\n[💻] C2 ACTION: Sent {mode} AI command.")
         
     return jsonify({"status": "sent"})
 
@@ -385,6 +416,7 @@ def send_radio():
                 payload = {"channel": ch, "from": HELTEC_NODE_ID_DEC, "type": "sendtext", "payload": final_text}
                 mqtt_client.publish(RADIO_PUBLISH_TOPIC, json.dumps(payload, ensure_ascii=False))
                 
+                # Restored Terminal Debug
                 print(f"[🎙️] Transmitted Part {i+1}/{total_chunks} on Channel {ch}: '{final_text}'")
                 
                 if total_chunks > 1 and i < total_chunks - 1:
