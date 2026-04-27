@@ -205,3 +205,21 @@ Perfect for users who want an offline tactical encyclopedia and situational awar
   * `python LLMconnectLora_Release.py` (To answer radio queries).
   * `python WebDashboardInterface_Release.py` (Optional).
 * **Result:** You get a highly intelligent, radio-accessible offline database that answers `!tac` and `!surv` queries without any of the IoT hardware overhead.
+
+
+  ## ⚖️ Phase 8: Licensing & Support
+
+**GhostNode-AI is provided under a Dual-License model.**
+
+* **Personal & Non-Profit Use:** You are entirely free to clone, modify, and deploy this architecture for personal projects, educational research, and non-profit off-grid missions. 
+* **Commercial & For-Profit Use:** If you intend to integrate GhostNode-AI (or its core architecture) into a commercial product, sell hardware pre-loaded with this software, or use it in any profit-generating environment, **a commercial license is strictly required.** Please reach out directly to arrange a commercial agreement.
+
+### ☕ Support the Mission
+GhostNode-AI was built from the ground up to push the boundaries of what is possible with off-grid local AI and Meshtastic radios. Countless hours went into the hardware testing, AI routing logic, and SCADA firmware. 
+
+If this system has helped you secure your comms, automate your off-grid basecamp, or if you just want to support future updates and development, consider dropping a tip to the wallets below!
+
+**Crypto Wallets:**
+
+* **ETH:** `0x86c49BdFD27E87E4860B453d82d4251c4a35771D`
+* **BTC:** `bc1qyfsfdmahpnjd40mznpg233q27fdvvxkl4rc62k`
