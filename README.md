@@ -188,7 +188,7 @@ For commercial licensing, project collaborations, or just to share pictures of y
 
 ```mermaid
 graph TD
-    %% Core Shared Components (Placed outside subgraphs to prevent routing crashes)
+    %% Core Shared Components
     E{{"Local MQTT Broker"}}
     F["Ollama Local LLM"]
     C[("ChromaDB Vector Store")]
@@ -202,37 +202,44 @@ graph TD
     %% Script 2 Workflow
     subgraph S2 [Script 2: The Radio Brain]
         D{Python Radio Router}
-        E <-->|Routes Private Chat| D
-        D <-->|Queries Context| C
-        D <-->|Sends Chat + DB Info| F
+        E -->|Forwards Chat| D
+        D -->|Queries| C
+        D -->|Prompts| F
+        D -->|Returns Answer| E
     end
 
     %% Script 3 Workflow
     subgraph S3 [Script 3: C2 Web Dashboard]
         W[Flask Web UI]
-        E <-->|Publishes / Subscribes| W
+        E -->|Feeds Data To| W
         W -.->|Displays| X[Live Squad Comms]
-        W -.->|Intercepts & Highlights| Y[Live Sensor Telemetry]
+        W -.->|Highlights| Y[Live Sensor Telemetry]
     end
 
     %% Script 4 Workflow
-    subgraph S4 [Script 4: Kinetic SCADA Dispatcher]
+    subgraph S4 [Script 4: Kinetic Dispatcher]
         I{IoT Dispatcher Router}
-        E <-->|Passes !action & Returns Telemetry| I
-        I <-->|Generates JSON| F
+        E -->|Passes !action| I
+        I -->|Requests JSON| F
+        I -->|Routes JSON to Edge| E
+        E -->|Returns Telemetry| I
+        I -->|Broadcasts to Radio| E
     end
 
     %% Hardware/Mesh Workflow
     subgraph Mesh [LoRa Mesh Network]
-        G(Base Station / Node A) <-->|WiFi Connect| E
-        G <-->|LoRa Encrypted RF| H(Remote User / Node B)
+        G(Base Station / Node A) -->|WiFi| E
+        E -->|WiFi| G
+        H(Remote User / Node B) -->|LoRa RF| G
+        G -->|LoRa RF| H
     end
 
     %% Edge Nodes Workflow
     subgraph Edge [Kinetic Edge Nodes]
         J[ESP32 Edge Node]
-        E <-->|Sends Cmd & Receives Telemetry| J
-        J -.->|Action: ON/OFF/MOVE| L((LED / Relay / Servo))
-        J -.->|Action: READ| M((DHT11 Temp/Humid Sensor))
+        E -->|Sends JSON Cmd| J
+        J -->|Publishes Telemetry| E
+        J -.->|Action: ON/OFF| L((LED / Relay))
+        J -.->|Action: READ| M((DHT11 Sensor))
     end
 ```
