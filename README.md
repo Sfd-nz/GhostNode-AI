@@ -188,45 +188,51 @@ For commercial licensing, project collaborations, or just to share pictures of y
 
 ```mermaid
 graph TD
+    %% Core Shared Components (Placed outside subgraphs to prevent routing crashes)
+    E{{"Local MQTT Broker"}}
+    F["Ollama Local LLM"]
+    C[("ChromaDB Vector Store")]
+
     %% Script 1 Workflow
-    subgraph Script 1: Database Ingestion
-        A[Dropzone PDFs & TXTs] -->|Read & Parse| C[(ChromaDB Vector Store)]
+    subgraph S1 [Script 1: Database Ingestion]
+        A[Dropzone PDFs & TXTs] -->|Read & Parse| C
         B[RSS Feeds / Web] -->|Stealth Scrape| C
     end
 
     %% Script 2 Workflow
-    subgraph Script 2: The Radio Brain
-        E[Local MQTT Broker] -->|Receives Private Chat| D{Python Radio Router}
-        D <-->|1. Queries Context| C
-        D <-->|2. Sends Chat + DB Info| F[Ollama Local LLM]
-        D -->|3. Sends Chunked Reply| E
+    subgraph S2 [Script 2: The Radio Brain]
+        D{Python Radio Router}
+        E <-->|Routes Private Chat| D
+        D <-->|Queries Context| C
+        D <-->|Sends Chat + DB Info| F
     end
 
-    %% Script 3 Workflow (NEW: Operations Center)
-    subgraph Script 3: C2 Web Dashboard
-        E <-->|Publishes / Subscribes| W[Flask Web UI]
+    %% Script 3 Workflow
+    subgraph S3 [Script 3: C2 Web Dashboard]
+        W[Flask Web UI]
+        E <-->|Publishes / Subscribes| W
         W -.->|Displays| X[Live Squad Comms]
         W -.->|Intercepts & Highlights| Y[Live Sensor Telemetry]
     end
 
-    %% Script 4 Workflow (UPDATED: Bidirectional Dispatcher)
-    subgraph Script 4: Kinetic SCADA Dispatcher
-        E -->|"Receives !action <br> & Catches Telemetry"| I{IoT Dispatcher Router}
-        I <-->|1. Ask Qwen for JSON| F
-        I -->|"2. Route JSON to Node <br> & 4. Broadcast to Radio"| E
+    %% Script 4 Workflow
+    subgraph S4 [Script 4: Kinetic SCADA Dispatcher]
+        I{IoT Dispatcher Router}
+        E <-->|Passes !action & Returns Telemetry| I
+        I <-->|Generates JSON| F
     end
 
     %% Hardware/Mesh Workflow
-    subgraph LoRa Mesh Network
+    subgraph Mesh [LoRa Mesh Network]
         G(Base Station / Node A) <-->|WiFi Connect| E
         G <-->|LoRa Encrypted RF| H(Remote User / Node B)
     end
 
-    %% Edge Nodes Workflow (UPDATED: Telemetry Loop)
-    subgraph Kinetic Edge Nodes
-        E -->|JSON Cmd: /basic/node_name| J[ESP32 Edge Node]
+    %% Edge Nodes Workflow
+    subgraph Edge [Kinetic Edge Nodes]
+        J[ESP32 Edge Node]
+        E <-->|Sends Cmd & Receives Telemetry| J
         J -.->|Action: ON/OFF/MOVE| L((LED / Relay / Servo))
         J -.->|Action: READ| M((DHT11 Temp/Humid Sensor))
-        J -->|Publishes JSON: /telemetry| E
     end
 ```
