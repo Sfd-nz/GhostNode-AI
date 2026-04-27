@@ -1,33 +1,36 @@
-# 📻 GhostNode-AI: Off-Grid Tactical Mesh Server & Kinetic Dispatcher (LoRa / MQTT)
+# 📻 GhostNode-AI: Off-Grid Tactical Mesh Server & Kinetic SCADA Dispatcher (LoRa / MQTT)
 
-GhostNode-AI is a fully offline, autonomous AI "Librarian," Tactical Assistant, Command & Control (C2) Dashboard, and **Kinetic Hardware Dispatcher** designed for Meshtastic LoRa networks. 
+GhostNode-AI is a fully offline, autonomous AI "Librarian," Tactical Assistant, Command & Control (C2) Dashboard, and **Bidirectional SCADA Dispatcher** designed for Meshtastic LoRa networks.
 
-It operates entirely independent of the internet, scraping global intelligence and reading offline manuals into a local multi-collection vector database. It broadcasts intelligent, context-aware answers over encrypted radio channels using strict transmission chunking. **With the V3 update, it now bridges the gap between digital intelligence and physical hardware**, allowing users to control local edge devices (relays, sensors, and servos) via natural language over the radio mesh.
+It operates entirely independent of the internet, scraping global intelligence and reading offline manuals into a local multi-collection vector database. It broadcasts intelligent, context-aware answers over encrypted radio channels using strict transmission chunking. 
+
+With the latest SCADA update, GhostNode bridges the gap between digital intelligence and physical hardware. You can now use natural language over the radio mesh to control local edge devices (relays, servos) and retrieve **live telemetry (temperature, humidity)** from a swarm of physical sensors using built-in debounce aggregation.
 
 <img width="2752" height="1536" alt="{__image_generation_instructions___{_202604222223" src="https://github.com/user-attachments/assets/c6c35e21-cc6c-4840-8ab0-ae692a951e6a" />
 
-⚠️ IMPORTANT: Running this on lower-end hardware? > The default model requires 24GB of RAM. If you are using a standard laptop or a Raspberry Pi, Please read the AI Model & Hardware Selection Guide to swap to a lighter model before continuing.
+⚠️ **IMPORTANT: Running this on lower-end hardware?** The default LLM models require significant RAM/VRAM. Please read the `🧠 AI Model & Hardware Selection Guide.md` to swap to lighter models before continuing.
+
+---
 
 ## 🧠 The Four Pillars of GhostNode-AI
+
 This system relies on four interconnected Python engines running simultaneously:
 
 1. **The Memory Librarian (`DropzoneChromadb_Release.py`):** Quietly builds the offline database. It utilizes stealth browser masquerading, multi-threaded worker queues, and URL deduplication to scrape RSS feeds without triggering bot-blockers. It separates data into specific collections and features a 90-day auto-pruning system.
 2. **The AI Brain (`LLMconnectLora_Release.py`):** The core radio listener. When an authorized user sends a command over the mesh (e.g., `!tac What is the latest news in the US?`), it securely queries the database using mathematical distance filtering to prevent hallucinations, and broadcasts a chunked response over LoRa.
-3. **The Operations Center (`WebDashboardInterface_Release.py`):** A local Flask web UI designed for a field laptop or tablet. It allows the operator to monitor live squad chatter, query the AI silently, intercept commands like `!weather`, and manually transmit C2 text to specific radio channels.
-4. **The Kinetic Dispatcher (`IoT_Dispatcher_Release.py`):** The hardware bridge. It intercepts natural language action commands (e.g., `turn on the blue led`), translates them into strict machine-readable JSON using a dedicated local coder LLM, and dispatches them to custom ESP32 hardware nodes. It then broadcasts a confirmation of the physical action back over the LoRa mesh.
+3. **The Operations Center (`WebDashboardInterface_Release.py`):** A local Flask web UI designed for a field laptop or tablet. It features split-screen comms, silent AI querying, manual radio transmission, and a **Live Telemetry Hub** that intercepts and displays returning sensor data from the hardware mesh.
+4. **The Kinetic SCADA Dispatcher (`IoT_Dispatcher_Release.py`):** The hardware bridge. It intercepts natural language commands (e.g., *turn on the blue led* or *what is the temperature*), translates them into strict machine-readable JSON using a dedicated local coder LLM (`qwen2.5-coder`), and dispatches them to custom ESP32 hardware nodes. It features a "Rolling Debounce Buffer" to aggregate massive swarm telemetry reports into clean, single-message LoRa transmissions.
 
 ---
 
-## 📻 Phase 1: Hardware & The "Ghost Node" Problem
+## 📻 Phase 1: Hardware & The SCADA Loop
+
 To build this system, you must use two separate Meshtastic radios, a local MQTT Broker, and optional Edge Nodes for physical interaction.
 
-### The Hardware Loop Solution
 * **The Base Station (Node A):** A dedicated radio (e.g., Heltec V3 plugged into the wall/server). Connected to local Wi-Fi, it acts solely as the AI's mouth and ears.
 * **Your Personal Radio (Node B):** The radio in your pocket or tactical rig, connected to your phone.
-* **The Local Broker:** A standalone MQTT server on your local network (e.g., Mosquitto on a Raspberry Pi or an ESP32 LilyGo).
-* **Kinetic Edge Nodes (Optional):** ESP32 microcontrollers (D1 Minis, ESP32-S3s) running custom GhostNode firmware. These nodes listen on specific MQTT topics (`/basic` or `/claw`), parse the AI's JSON, trigger real-world actions, and survive power-spikes using custom Tasmota-style brownout overrides.
-
-**How it flows:** You type a command on Node B. Node B transmits via LoRa. Node A hears it and routes it over Wi-Fi to your Local MQTT Broker. The Python AI Brain (or Dispatcher) reads it, thinks, and sends the answer back to the Broker. Node A broadcasts the answer/confirmation over LoRa. Your personal Node B receives it.
+* **The Local Broker (`E_paper_MqttBroker_Release.ino`):** A standalone MQTT server on your local network. For the ultimate tactical kit, flash this provided sketch to an **ESP32 T5 E-Paper** board for a low-power, screen-equipped portable broker. 
+* **Kinetic Edge Nodes (`MqttClientwithDH11_Release.ino`):** ESP32 microcontrollers (e.g., D1 Minis) running custom GhostNode firmware wired with **DHT11 Sensors**. These nodes listen on specific MQTT topics, parse the AI's JSON, trigger real-world actions, read physical sensors, and fire JSON telemetry back to the basecamp.
 
 ---
 
@@ -99,7 +102,7 @@ python IoT_Dispatcher_Release.py
 ```
 
 📡 Phase 6: Using the System
-Radio Commands (Multi-Collection Routing)
+1. Database Radio Commands
 Grab your personal Meshtastic radio (Node B) and send a text to your designated AI channel. The AI uses strict collection-routing to prevent cross-contamination of data:
 
 !tac [query] -> Searches ONLY News intel. (Replies with a military SITREP).
@@ -110,22 +113,27 @@ Grab your personal Meshtastic radio (Node B) and send a text to your designated 
 
 !ai [query] -> Searches the entire database. (Direct, efficient response).
 
-Kinetic Hardware Commands
-Send natural language commands to interact with physical Edge Nodes. The Dispatcher will generate the JSON and broadcast a confirmation back to your radio:
+2. Kinetic SCADA Commands
+Send natural language commands to interact with physical Edge Nodes. The Dispatcher will generate JSON, trigger the ESP32, and broadcast either a confirmation or live sensor data back to your radio.
 
-!action [query] -> Routes to standard ESP32 Basic Nodes (e.g., !action turn on the blue led).
+Basic Kinetic Control: !action turn on the blue led on node alpha
 
-!action edge [query] or !action claw [query] -> Routes complex multi-axis commands to ESP32-S3 Smart Nodes (e.g., !action claw look to your top right).
+Specific Node Telemetry: !action what is the temperature on dh11node (Replies: [SENSOR] DH11NODE TEMPERATURE: 21.4)
 
-Operations Center Dashboard Features
+Swarm Telemetry: !action read the temperature on all nodes (The buffer will aggregate all replies and send: [SENSORS] ALPHA: 21.4 | BRAVO: 25.3 | CHARLIE: 19.8)
+
+LoRa Override: Prepend lora to force a command over the RF mesh rather than local Wi-Fi: !action lora check the humidity on dh11node.
+
+3. Operations Center Dashboard Features
 Split-Screen Comms: Separates your AI Database queries (Left Panel) from Live Squad Chatter (Right Panel).
 
-Silent Mode: Ask the AI questions and read the answers on your screen without broadcasting them over the radio and congesting the LoRa network. (Works perfectly for testing !action commands silently).
+Telemetry Intercept: Automatically catches and highlights returning DHT11 sensor data in bright yellow on the C2 dashboard.
+
+Silent Mode: Ask the AI questions and read the answers on your screen without broadcasting them over the radio and congesting the LoRa network.
 
 Dynamic Channel Routing: Send manual human messages or broadcast AI intel to specific channels (0-5) using the dropdown menu.
 
-Auto-Responder Intercepts: Squad mates can text !weather [City] over the radio, and the dashboard will silently fetch the internet data and broadcast the clean weather report automatically
-
+Auto-Responder Intercepts: Squad mates can text !weather [City] over the radio, and the dashboard will silently fetch the internet data and broadcast the clean weather report automatically.
 
 ```mermaid
 graph TD
