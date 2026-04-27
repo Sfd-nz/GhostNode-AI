@@ -211,11 +211,9 @@ graph TD
 
     %% Script 4 Workflow (UPDATED: Bidirectional Dispatcher)
     subgraph Script 4: Kinetic SCADA Dispatcher
-        E -->|Receives !action Command| I{IoT Dispatcher Router}
+        E -->|"Receives !action <br> & Catches Telemetry"| I{IoT Dispatcher Router}
         I <-->|1. Ask Qwen for JSON| F
-        I -->|2. Route JSON to Node| E
-        E -->|3. Catch Sensor Telemetry| I
-        I -->|4. Buffer, Chunk & Broadcast to Radio| E
+        I -->|"2. Route JSON to Node <br> & 4. Broadcast to Radio"| E
     end
 
     %% Hardware/Mesh Workflow
