@@ -223,3 +223,10 @@ If this system has helped you secure your comms, automate your off-grid basecamp
 
 * **ETH:** `0x86c49BdFD27E87E4860B453d82d4251c4a35771D`
 * **BTC:** `bc1qyfsfdmahpnjd40mznpg233q27fdvvxkl4rc62k`
+
+### 📬 Contact & Inquiries
+
+For commercial licensing, project collaborations, or just to share pictures of your GhostNode hardware builds out in the wild, you can reach out to me here:
+
+* **Twitter / X:** [Profile](https://x.com/DigbySharples)
+* **Facebook:** [Profile](https://www.facebook.com/Mr.Sinical)
