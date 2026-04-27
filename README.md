@@ -180,3 +180,28 @@ graph TD
         J -.->|Action: READ| M((DHT11 Temp/Humid Sensor))
         J -->|Publishes JSON: /telemetry| E
     end
+```
+
+## 🧩 Phase 7: Modular Deployments (Microservice Architecture)
+
+GhostNode-AI was built using a strict **Decoupled Microservice Architecture**. The Python scripts do not share memory or rely on each other's code to function—they only communicate via the MQTT Broker. 
+
+This means you do not have to run the entire suite. You can deploy specific fragments of the GhostNode network based on your hardware capabilities and mission requirements.
+
+### Option A: The "Kinetic-Only" SCADA Setup
+Perfect for makers, off-grid smart homes, or users with lower-end hardware who don't have the RAM to run massive RAG AI models. This setup gives you full natural language control over physical hardware and bidirectional sensor telemetry.
+
+* **Required AI:** `qwen2.5-coder:7b` (Very lightweight, runs easily on most laptops).
+* **Required Scripts:** * `python IoT_Dispatcher_Release.py` (Handles the logic and LoRa chunking).
+  * `python WebDashboardInterface_Release.py` (Optional: If you want the visual C2 interface).
+* **Result:** You can command relays and query DHT11 swarms over your radio mesh, entirely bypassing the heavy ChromaDB and Mixtral components.
+
+### Option B: The "Intel-Only" Librarian Setup
+Perfect for users who want an offline tactical encyclopedia and situational awareness tool, but don't want to wire up physical ESP32 edge nodes.
+
+* **Required AI:** Chat Model (e.g., `dolphin-mixtral` or `llama3`) + `nomic-embed-text`.
+* **Required Scripts:**
+  * `python DropzoneChromadb_Release.py` (To build your database).
+  * `python LLMconnectLora_Release.py` (To answer radio queries).
+  * `python WebDashboardInterface_Release.py` (Optional).
+* **Result:** You get a highly intelligent, radio-accessible offline database that answers `!tac` and `!surv` queries without any of the IoT hardware overhead.
